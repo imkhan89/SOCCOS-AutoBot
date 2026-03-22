@@ -1,59 +1,80 @@
 /**
  * SOCCOS-AutoBot
- * Session Memory (Bulletproof)
+ * Session Memory (FINAL - FIXED)
  */
 
 const sessions = {};
 
 /**
- * Get session
+ * DEFAULT SESSION STRUCTURE
+ */
+function createDefaultSession() {
+  return {
+    lastIntent: null,
+    lastQuery: null,
+    context: {},
+    lastResults: [],
+    order: {
+      step: null,
+      product: null,
+      name: null,
+      address: null,
+      isProcessing: false,
+    },
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * GET SESSION
  */
 function getSession(userId) {
-    if (!sessions[userId]) {
-        sessions[userId] = {
-            lastIntent: null,
-            lastQuery: null,
-            context: {},
-            lastResults: [],
-            order: {
-                step: null,
-                product: null,
-                name: null,
-                address: null,
-                isProcessing: false
-            }
-        };
-    }
-    return sessions[userId];
+  if (!userId) return createDefaultSession();
+
+  if (!sessions[userId]) {
+    sessions[userId] = createDefaultSession();
+  }
+
+  return sessions[userId];
 }
 
 /**
- * Update session
+ * UPDATE SESSION
  */
 function updateSession(userId, data = {}) {
-    const session = getSession(userId);
+  if (!userId || typeof data !== "object") return null;
 
-    sessions[userId] = {
-        ...session,
-        ...data,
-        order: {
-            ...session.order,
-            ...(data.order || {})
-        }
-    };
+  const session = getSession(userId);
 
-    return sessions[userId];
+  sessions[userId] = {
+    ...session,
+    ...data,
+    context: {
+      ...session.context,
+      ...(data.context || {}),
+    },
+    lastResults: data.lastResults || session.lastResults,
+    order: {
+      ...session.order,
+      ...(data.order || {}),
+    },
+    updatedAt: Date.now(),
+  };
+
+  return sessions[userId];
 }
 
 /**
- * Clear session
+ * CLEAR SESSION (SAFE RESET)
  */
 function clearSession(userId) {
-    delete sessions[userId];
+  if (!userId) return;
+
+  sessions[userId] = createDefaultSession();
 }
 
 module.exports = {
-    getSession,
-    updateSession,
-    clearSession
+  getSession,
+  updateSession,
+  clearSession,
 };
