@@ -1,77 +1,84 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Controller
- * -------------------
- * Handles:
- * - Meta webhook verification
- * - Incoming WhatsApp messages → pipeline
+ * Webhook Controller (FINAL - CLEAN)
  */
 
-const env = require('../config/env');
-const messagePipeline = require('../orchestration/messagePipeline');
+const env = require("../config/env");
+const messagePipeline = require("../orchestration/messagePipeline");
 
 /**
  * GET /webhook
- * Meta verification
+ * Meta Verification
  */
 exports.verifyWebhook = (req, res) => {
-    try {
-        const mode = req.query['hub.mode'];
-        const token = req.query['hub.verify_token'];
-        const challenge = req.query['hub.challenge'];
+  try {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
 
-        if (mode === 'subscribe' && token === env.whatsapp.verifyToken) {
-            console.log('✅ Webhook verified');
-            return res.status(200).send(challenge);
-        } else {
-            console.error('❌ Verification failed');
-            return res.sendStatus(403);
-        }
-    } catch (error) {
-        console.error('❌ Verification Error:', error);
-        return res.sendStatus(500);
+    if (mode === "subscribe" && token === env.whatsapp.verifyToken) {
+      console.log("✅ Webhook Verified");
+      return res.status(200).send(challenge);
     }
+
+    console.error("❌ Verification Failed");
+    return res.sendStatus(403);
+
+  } catch (error) {
+    console.error("❌ Verification Error:", error.message);
+    return res.sendStatus(500);
+  }
 };
 
 /**
  * POST /webhook
- * Incoming messages
+ * Handle Incoming WhatsApp Messages
  */
 exports.handleWebhook = async (req, res) => {
-    try {
-        const body = req.body;
+  try {
+    const body = req.body;
 
-        /**
-         * Validate WhatsApp payload
-         */
-        if (
-            body.object &&
-            body.entry &&
-            body.entry[0]?.changes &&
-            body.entry[0].changes[0]?.value?.messages
-        ) {
-            const message = body.entry[0].changes[0].value.messages[0];
+    /**
+     * Always acknowledge webhook first (Meta requirement)
+     */
+    res.sendStatus(200);
 
-            const from = message.from; // user phone number
-            const text = message.text?.body;
+    /**
+     * Validate payload safely
+     */
+    const message =
+      body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-            console.log('📥 Incoming:', { from, text });
+    if (!message) return;
 
-            /**
-             * Pass to pipeline
-             */
-            await messagePipeline.processIncomingMessage({
-                from,
-                text
-            });
+    const from = message.from;
 
-            return res.sendStatus(200);
-        }
+    /**
+     * Handle different message types
+     */
+    let text = "";
 
-        return res.sendStatus(404);
-
-    } catch (error) {
-        console.error('❌ Webhook Error:', error.message);
-        return res.sendStatus(500);
+    if (message.text?.body) {
+      text = message.text.body;
+    } else if (message.button?.text) {
+      text = message.button.text;
+    } else if (message.interactive?.button_reply?.title) {
+      text = message.interactive.button_reply.title;
+    } else {
+      text = "unsupported";
     }
+
+    console.log("📥 Incoming:", { from, text });
+
+    /**
+     * Pass to pipeline (ONLY CALL)
+     */
+    await messagePipeline({
+      from,
+      text,
+    });
+
+  } catch (error) {
+    console.error("❌ Webhook Error:", error.message);
+  }
 };
