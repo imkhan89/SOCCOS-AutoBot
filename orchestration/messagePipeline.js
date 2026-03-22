@@ -1,151 +1,178 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE WITH BUTTON + LIST UI
+ * CLEAN PIPELINE (FINAL)
  */
 
-const whatsappService = require('../services/whatsappService');
-const intentMapper = require('../engine/semantic/intentMapper');
-const queryProcessor = require('../engine/processors/queryProcessor');
-const sessionMemory = require('../data/memory/sessionMemory');
-const searchService = require('../search/searchService');
-const responseGenerator = require('../ai/responseGenerator');
+const intentMapper = require("../engine/semantic/intentMapper");
+const queryProcessor = require("../engine/processors/queryProcessor");
+const { searchProducts } = require("../search/searchService");
+const responseGenerator = require("../ai/responseGenerator");
+const whatsappService = require("../services/whatsappService");
+const sessionMemory = require("../data/memory/sessionMemory");
 
 /**
- * MAIN
+ * MAIN PIPELINE (ONLY ENTRY)
  */
-async function processIncomingMessage({ from, text }) {
-    try {
-
-        /**
-         * ORDER FLOW FIRST
-         */
-        const orderFlowResponse = await handleOrderFlow(from, text);
-        if (orderFlowResponse) {
-            return whatsappService.sendText(from, orderFlowResponse);
-        }
-
-        const { intent } = intentMapper.mapIntent(text);
-
-        switch (intent) {
-            case 'menu':
-                return sendMenu(from);
-
-            case 'search':
-                return handleSearch(from, text);
-
-            case 'order_select':
-                return handleOrderSelection(from, text);
-
-            default:
-                return whatsappService.sendText(
-                    from,
-                    'Type product name (e.g., Civic brake pads)'
-                );
-        }
-
-    } catch (error) {
-        return whatsappService.sendText(from, 'System error.');
+async function messagePipeline({ from, text }) {
+  try {
+    /**
+     * STEP 1 — ORDER FLOW FIRST (STATE MACHINE)
+     */
+    const orderResponse = await handleOrderFlow(from, text);
+    if (orderResponse) {
+      return await whatsappService.sendText(from, orderResponse);
     }
-}
 
-/**
- * 🔥 BUTTON MENU
- */
-async function sendMenu(userId) {
-    return whatsappService.sendButtons(
-        userId,
-        '🚗 NDES AutoBot\nChoose an option:',
-        [
-            { id: 'search', title: 'Search Parts' },
-            { id: 'support', title: 'Support' }
-        ]
+    /**
+     * STEP 2 — INTENT DETECTION
+     */
+    const intent = intentMapper(text);
+
+    /**
+     * STEP 3 — ROUTING
+     */
+    if (intent === "menu") {
+      return await whatsappService.sendText(
+        from,
+        "Welcome to NDES AutoBot.\nType product name to search."
+      );
+    }
+
+    if (intent === "search") {
+      return await handleSearch(from, text);
+    }
+
+    /**
+     * DEFAULT FALLBACK
+     */
+    return await whatsappService.sendText(
+      from,
+      "Please type product name (e.g., Civic brake pads)"
     );
+
+  } catch (error) {
+    console.error("❌ Pipeline Error:", error.message);
+
+    return await whatsappService.sendText(
+      from,
+      "System error. Please try again."
+    );
+  }
 }
 
 /**
- * 🔥 LIST UI FOR PRODUCTS
+ * SEARCH FLOW
  */
 async function handleSearch(userId, text) {
-    const processed = queryProcessor.processQuery(text);
+  try {
+    const query = queryProcessor(text);
 
-    const results = await searchService.searchProducts(
-        processed.normalizedQuery
-    );
+    const results = await searchProducts(query);
 
+    if (!results || results.length === 0) {
+      return await whatsappService.sendText(
+        userId,
+        "No products found."
+      );
+    }
+
+    /**
+     * Save to session
+     */
     sessionMemory.updateSession(userId, {
-        lastResults: results.products
+      lastResults: results,
     });
 
     /**
-     * Convert products → list format
+     * Convert to simple list text (NO UI COUPLING)
      */
-    const sections = [
-        {
-            title: 'Available Products',
-            rows: results.products.map((p, i) => ({
-                id: `${i + 1}`,
-                title: p.name,
-                description: `Rs ${p.price}`
-            }))
-        }
-    ];
+    const message = results
+      .map((item, i) => {
+        const name = item.title || item.name || "Product";
+        const price = item.price || "";
+        return `${i + 1}. ${name} ${price ? `- Rs ${price}` : ""}`;
+      })
+      .join("\n");
 
-    return whatsappService.sendList(
-        userId,
-        'Select a product to order:',
-        sections
+    return await whatsappService.sendText(
+      userId,
+      `Available Products:\n\n${message}\n\nReply with number to select.`
     );
+
+  } catch (error) {
+    console.error("Search Error:", error.message);
+
+    return await whatsappService.sendText(
+      userId,
+      "Search error. Try again."
+    );
+  }
 }
 
 /**
- * HANDLE SELECTION
+ * ORDER SELECTION
  */
-async function handleOrderSelection(userId, text) {
-    const session = sessionMemory.getSession(userId);
+async function handleSelection(userId, text) {
+  const session = sessionMemory.getSession(userId) || {};
+  const results = session.lastResults || [];
 
-    const index = parseInt(text) - 1;
+  const index = parseInt(text) - 1;
 
-    if (!session.lastResults[index]) {
-        return whatsappService.sendText(userId, 'Invalid selection.');
-    }
+  if (!results[index]) {
+    return await whatsappService.sendText(userId, "Invalid selection.");
+  }
 
-    const product = session.lastResults[index];
+  const product = results[index];
 
-    sessionMemory.updateSession(userId, {
-        order: {
-            step: 'awaiting_name',
-            product
-        }
-    });
+  sessionMemory.updateSession(userId, {
+    order: {
+      step: "awaiting_name",
+      product,
+    },
+  });
 
-    return whatsappService.sendText(
-        userId,
-        `Selected: ${product.name}\nEnter your name:`
-    );
+  return await whatsappService.sendText(
+    userId,
+    `Selected: ${product.title || product.name}\nEnter your name:`
+  );
 }
 
 /**
- * ORDER FLOW
+ * ORDER FLOW (STATE MACHINE)
  */
 async function handleOrderFlow(userId, text) {
-    const session = sessionMemory.getSession(userId);
-    const order = session.order;
+  const session = sessionMemory.getSession(userId) || {};
+  const order = session.order;
 
-    if (!order || !order.step) return null;
-
-    if (order.step === 'awaiting_name') {
-        sessionMemory.updateSession(userId, {
-            order: { ...order, step: 'awaiting_address', name: text }
-        });
-        return 'Enter address:';
+  if (!order || !order.step) {
+    /**
+     * Check if user is selecting product (number)
+     */
+    if (!isNaN(text)) {
+      return await handleSelection(userId, text);
     }
-
-    if (order.step === 'awaiting_address') {
-        sessionMemory.clearSession(userId);
-        return '✅ Order placed!';
-    }
-
     return null;
+  }
+
+  if (order.step === "awaiting_name") {
+    sessionMemory.updateSession(userId, {
+      order: {
+        ...order,
+        step: "awaiting_address",
+        name: text,
+      },
+    });
+
+    return "Enter your address:";
+  }
+
+  if (order.step === "awaiting_address") {
+    sessionMemory.clearSession(userId);
+
+    return "✅ Order placed successfully!";
+  }
+
+  return null;
 }
 
-module.exports = { processIncomingMessage };
+module.exports = messagePipeline;
