@@ -1,59 +1,62 @@
-async function generateSearchResponse(searchData) {
-    try {
-        const { query, products } = searchData;
+/**
+ * SOCCOS-AutoBot
+ * Response Generator (FINAL - SAFE & FLEXIBLE)
+ * --------------------------------------------
+ * INPUT: intent, data, originalText
+ * OUTPUT: plain text response
+ * NO WhatsApp formatting
+ */
 
-        if (!products || products.length === 0) {
-            return `❌ No results found for "${query}".\n\nTry a different keyword or ask for help.`;
-        }
+async function responseGenerator(intent, data, originalText) {
+  try {
+    /**
+     * SEARCH RESPONSE
+     */
+    if (intent === "search") {
+      if (!data || data.length === 0) {
+        return "❌ No products found. Try a different keyword.";
+      }
 
-        /**
-         * Build product list with links
-         */
-        let productList = products
-            .map((p, i) => {
-                return `${i + 1}. ${p.name}
-💰 Rs ${p.price}
-🔗 ${p.url}`;
-            })
-            .join('\n\n');
-
-        /**
-         * SALES-OPTIMIZED PROMPT
-         */
-        const prompt = `
-You are a high-converting automotive sales assistant.
-
-Customer searched: "${query}"
-
-Products:
-${productList}
-
-Write a WhatsApp reply that:
-- Feels human and helpful
-- Highlights value (quality, fitment, reliability)
-- Encourages quick action
-- Keeps it short and clean
-- Adds a soft CTA (e.g., "Reply with number to order")
-
-Do NOT sound robotic.
-`;
-
-        const completion = await openaiClient.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: "You are a sales expert for automotive parts." },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.8
-        });
-
-        return completion.choices[0].message.content;
-
-    } catch (error) {
-        console.error('❌ AI Sales Response Error:', error.message);
-
-        return products
-            .map((p, i) => `${i + 1}. ${p.name} - Rs ${p.price}`)
-            .join('\n');
+      return data
+        .map((item, i) => {
+          const name = item.title || item.name || "Product";
+          const price = item.price ? `Rs ${item.price}` : "";
+          return `${i + 1}. ${name} ${price}`;
+        })
+        .join("\n");
     }
+
+    /**
+     * GREETING
+     */
+    if (intent === "greeting") {
+      return "👋 Welcome to NDES AutoBot!\nType product name to search.";
+    }
+
+    /**
+     * MENU
+     */
+    if (intent === "menu") {
+      return "📋 Menu:\n1. Search products\n2. Support";
+    }
+
+    /**
+     * SUPPORT
+     */
+    if (intent === "support") {
+      return "🤝 Support: Please describe your issue and our team will assist.";
+    }
+
+    /**
+     * DEFAULT FALLBACK
+     */
+    return "Type product name (e.g., Civic brake pads)";
+
+  } catch (error) {
+    console.error("❌ ResponseGenerator Error:", error.message);
+
+    return "System error. Please try again.";
+  }
 }
+
+module.exports = responseGenerator;
