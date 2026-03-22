@@ -1,22 +1,23 @@
 /**
  * SOCCOS-AutoBot
- * CLEAN PIPELINE (FINAL)
+ * CLEAN PIPELINE (FINAL - FIXED)
  */
 
 const intentMapper = require("../engine/semantic/intentMapper");
 const queryProcessor = require("../engine/processors/queryProcessor");
 const { searchProducts } = require("../search/searchService");
-const responseGenerator = require("../ai/responseGenerator");
 const whatsappService = require("../services/whatsappService");
 const sessionMemory = require("../data/memory/sessionMemory");
 
 /**
- * MAIN PIPELINE (ONLY ENTRY)
+ * MAIN PIPELINE
  */
 async function messagePipeline({ from, text }) {
   try {
+    if (!from || !text) return;
+
     /**
-     * STEP 1 — ORDER FLOW FIRST (STATE MACHINE)
+     * STEP 1 — ORDER FLOW
      */
     const orderResponse = await handleOrderFlow(from, text);
     if (orderResponse) {
@@ -24,18 +25,36 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * STEP 2 — INTENT DETECTION
+     * STEP 2 — INTENT
      */
     const intent = intentMapper(text);
 
     /**
      * STEP 3 — ROUTING
      */
+    if (intent === "greeting") {
+      return await whatsappService.sendText(
+        from,
+        "👋 Welcome to NDES AutoBot!\nType product name to search."
+      );
+    }
+
     if (intent === "menu") {
       return await whatsappService.sendText(
         from,
-        "Welcome to NDES AutoBot.\nType product name to search."
+        "📋 Menu:\n1. Search products\n2. Support"
       );
+    }
+
+    if (intent === "support") {
+      return await whatsappService.sendText(
+        from,
+        "🤝 Please describe your issue. Our team will assist."
+      );
+    }
+
+    if (intent === "order_select") {
+      return await handleSelection(from, text);
     }
 
     if (intent === "search") {
@@ -43,11 +62,11 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * DEFAULT FALLBACK
+     * DEFAULT
      */
     return await whatsappService.sendText(
       from,
-      "Please type product name (e.g., Civic brake pads)"
+      "Type product name (e.g., Civic brake pads)"
     );
 
   } catch (error) {
@@ -67,6 +86,13 @@ async function handleSearch(userId, text) {
   try {
     const query = queryProcessor(text);
 
+    if (!query) {
+      return await whatsappService.sendText(
+        userId,
+        "Please enter a valid product name."
+      );
+    }
+
     const results = await searchProducts(query);
 
     if (!results || results.length === 0) {
@@ -76,21 +102,15 @@ async function handleSearch(userId, text) {
       );
     }
 
-    /**
-     * Save to session
-     */
     sessionMemory.updateSession(userId, {
       lastResults: results,
     });
 
-    /**
-     * Convert to simple list text (NO UI COUPLING)
-     */
     const message = results
       .map((item, i) => {
         const name = item.title || item.name || "Product";
-        const price = item.price || "";
-        return `${i + 1}. ${name} ${price ? `- Rs ${price}` : ""}`;
+        const price = item.price ? `- Rs ${item.price}` : "";
+        return `${i + 1}. ${name} ${price}`;
       })
       .join("\n");
 
@@ -116,9 +136,9 @@ async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const results = session.lastResults || [];
 
-  const index = parseInt(text) - 1;
+  const index = parseInt(text, 10) - 1;
 
-  if (!results[index]) {
+  if (isNaN(index) || !results[index]) {
     return await whatsappService.sendText(userId, "Invalid selection.");
   }
 
@@ -138,21 +158,13 @@ async function handleSelection(userId, text) {
 }
 
 /**
- * ORDER FLOW (STATE MACHINE)
+ * ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const order = session.order;
 
-  if (!order || !order.step) {
-    /**
-     * Check if user is selecting product (number)
-     */
-    if (!isNaN(text)) {
-      return await handleSelection(userId, text);
-    }
-    return null;
-  }
+  if (!order || !order.step) return null;
 
   if (order.step === "awaiting_name") {
     sessionMemory.updateSession(userId, {
@@ -168,7 +180,6 @@ async function handleOrderFlow(userId, text) {
 
   if (order.step === "awaiting_address") {
     sessionMemory.clearSession(userId);
-
     return "✅ Order placed successfully!";
   }
 
