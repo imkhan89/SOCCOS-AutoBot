@@ -1,10 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Response Generator (FINAL - SAFE & FLEXIBLE)
- * --------------------------------------------
- * INPUT: intent, data, originalText
- * OUTPUT: plain text response
- * NO WhatsApp formatting
+ * Response Generator (FINAL - FIXED)
  */
 
 async function responseGenerator(intent, data, originalText) {
@@ -13,17 +9,25 @@ async function responseGenerator(intent, data, originalText) {
      * SEARCH RESPONSE
      */
     if (intent === "search") {
-      if (!data || data.length === 0) {
+      if (!Array.isArray(data) || data.length === 0) {
         return "❌ No products found. Try a different keyword.";
       }
 
-      return data
+      const message = data
         .map((item, i) => {
-          const name = item.title || item.name || "Product";
-          const price = item.price ? `Rs ${item.price}` : "";
-          return `${i + 1}. ${name} ${price}`;
+          const name =
+            (item && (item.title || item.name)) || "Product";
+
+          const price =
+            item && item.price ? ` - Rs ${item.price}` : "";
+
+          return `${i + 1}. ${name}${price}`;
         })
-        .join("\n");
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+
+      return message || "No products available.";
     }
 
     /**
@@ -44,17 +48,23 @@ async function responseGenerator(intent, data, originalText) {
      * SUPPORT
      */
     if (intent === "support") {
-      return "🤝 Support: Please describe your issue and our team will assist.";
+      return "🤝 Please describe your issue. Our team will assist.";
     }
 
     /**
-     * DEFAULT FALLBACK
+     * ORDER SELECT (fallback handled in pipeline)
+     */
+    if (intent === "order_select") {
+      return "Processing your selection...";
+    }
+
+    /**
+     * DEFAULT
      */
     return "Type product name (e.g., Civic brake pads)";
 
   } catch (error) {
     console.error("❌ ResponseGenerator Error:", error.message);
-
     return "System error. Please try again.";
   }
 }
