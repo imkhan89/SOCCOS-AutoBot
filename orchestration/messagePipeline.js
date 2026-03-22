@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * FINAL Message Pipeline WITH ORDER SYSTEM
+ * FINAL Message Pipeline WITH ORDER + SHOPIFY INTEGRATION
  */
 
 const whatsappService = require('../services/whatsappService');
@@ -9,6 +9,7 @@ const queryProcessor = require('../engine/processors/queryProcessor');
 const sessionMemory = require('../data/memory/sessionMemory');
 const searchService = require('../search/searchService');
 const responseGenerator = require('../ai/responseGenerator');
+const shopifyClient = require('../integrations/shopifyClient');
 
 /**
  * MAIN PIPELINE
@@ -22,7 +23,7 @@ async function processIncomingMessage({ from, text }) {
         }
 
         /**
-         * 🔥 ORDER FLOW CHECK (PRIORITY)
+         * 🔥 ORDER FLOW PRIORITY
          */
         const orderFlowResponse = await handleOrderFlow(from, text);
         if (orderFlowResponse) {
@@ -73,7 +74,11 @@ async function processIncomingMessage({ from, text }) {
 
     } catch (error) {
         console.error('❌ Pipeline Error:', error.message);
-        return await whatsappService.sendText(from, 'System error.');
+
+        return await whatsappService.sendText(
+            from,
+            'Something went wrong. Please try again later.'
+        );
     }
 }
 
@@ -82,11 +87,21 @@ async function processIncomingMessage({ from, text }) {
  */
 
 function handleGreeting() {
-    return 'Welcome to NDES AutoBot 🚗\nType your car + part.';
+    return (
+        'Welcome to NDES AutoBot 🚗\n\n' +
+        'Type your car + part\n' +
+        'Example: Civic brake pads 2018\n\n' +
+        'Or type *menu*'
+    );
 }
 
 function handleMenu() {
-    return 'Menu:\n1. Search Parts\n2. Support';
+    return (
+        '🚗 *NDES AutoBot*\n\n' +
+        '1️⃣ Search Auto Parts\n' +
+        '2️⃣ Customer Support\n\n' +
+        '💡 Example: Civic oil filter'
+    );
 }
 
 /**
@@ -100,7 +115,7 @@ async function handleSearch(userId, text) {
     );
 
     /**
-     * 🔥 STORE RESULTS
+     * STORE RESULTS FOR ORDER SELECTION
      */
     sessionMemory.updateSession(userId, {
         lastResults: results.products
@@ -115,7 +130,7 @@ async function handleSearch(userId, text) {
 }
 
 /**
- * ORDER SELECTION
+ * PRODUCT SELECTION
  */
 async function handleOrderSelection(userId, text) {
     const session = sessionMemory.getSession(userId);
@@ -123,7 +138,7 @@ async function handleOrderSelection(userId, text) {
     const index = parseInt(text) - 1;
 
     if (!session.lastResults || !session.lastResults[index]) {
-        return 'Invalid selection.';
+        return 'Invalid selection. Please try again.';
     }
 
     const product = session.lastResults[index];
@@ -135,11 +150,14 @@ async function handleOrderSelection(userId, text) {
         }
     });
 
-    return `Selected: ${product.name}\nEnter your name:`;
+    return (
+        `🛒 Selected:\n${product.name}\n\n` +
+        'Please enter your name:'
+    );
 }
 
 /**
- * ORDER FLOW
+ * 🔥 ORDER FLOW WITH SHOPIFY
  */
 async function handleOrderFlow(userId, text) {
     const session = sessionMemory.getSession(userId);
@@ -147,6 +165,9 @@ async function handleOrderFlow(userId, text) {
 
     if (!order || !order.step) return null;
 
+    /**
+     * STEP 1 — NAME
+     */
     if (order.step === 'awaiting_name') {
         sessionMemory.updateSession(userId, {
             order: {
@@ -156,10 +177,15 @@ async function handleOrderFlow(userId, text) {
             }
         });
 
-        return 'Enter your address:';
+        return '📍 Please enter your delivery address:';
     }
 
+    /**
+     * STEP 2 — ADDRESS + SHOPIFY ORDER
+     */
     if (order.step === 'awaiting_address') {
+
+        // Save address
         sessionMemory.updateSession(userId, {
             order: {
                 ...order,
@@ -168,11 +194,35 @@ async function handleOrderFlow(userId, text) {
             }
         });
 
+        /**
+         * 🔥 CREATE SHOPIFY ORDER
+         */
+        const shopifyOrder = await shopifyClient.createOrder({
+            product: order.product,
+            name: order.name,
+            address: text
+        });
+
+        /**
+         * SUCCESS RESPONSE
+         */
+        if (shopifyOrder) {
+            return (
+                `✅ *Order Confirmed!*\n\n` +
+                `🆔 Order ID: ${shopifyOrder.id}\n` +
+                `Product: ${order.product.name}\n\n` +
+                `🚚 Cash on Delivery\n` +
+                `Our team will contact you shortly.`
+            );
+        }
+
+        /**
+         * FALLBACK RESPONSE
+         */
         return (
-            `✅ Order Confirmed\n\n` +
-            `Product: ${order.product.name}\n` +
-            `Name: ${order.name}\n` +
-            `Address: ${text}`
+            `✅ Order Received!\n\n` +
+            `Product: ${order.product.name}\n\n` +
+            `Our team will contact you shortly.`
         );
     }
 
@@ -180,11 +230,17 @@ async function handleOrderFlow(userId, text) {
 }
 
 function handleSupport() {
-    return 'Support will contact you.';
+    return (
+        '🤝 Customer Support\n\n' +
+        'Please describe your issue.\n' +
+        'Our team will assist you shortly.'
+    );
 }
 
 async function handleFallback(text) {
     return await responseGenerator.generateFallbackResponse(text);
 }
 
-module.exports = { processIncomingMessage };
+module.exports = {
+    processIncomingMessage
+};
