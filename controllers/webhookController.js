@@ -4,14 +4,15 @@
  * -------------------
  * Handles:
  * - Meta webhook verification
- * - Incoming WhatsApp messages
+ * - Incoming WhatsApp messages → pipeline
  */
 
 const env = require('../config/env');
+const messagePipeline = require('../orchestration/messagePipeline');
 
 /**
  * GET /webhook
- * Meta verification endpoint
+ * Meta verification
  */
 exports.verifyWebhook = (req, res) => {
     try {
@@ -20,10 +21,10 @@ exports.verifyWebhook = (req, res) => {
         const challenge = req.query['hub.challenge'];
 
         if (mode === 'subscribe' && token === env.whatsapp.verifyToken) {
-            console.log('✅ Webhook verified successfully');
+            console.log('✅ Webhook verified');
             return res.status(200).send(challenge);
         } else {
-            console.error('❌ Webhook verification failed');
+            console.error('❌ Verification failed');
             return res.sendStatus(403);
         }
     } catch (error) {
@@ -34,17 +35,35 @@ exports.verifyWebhook = (req, res) => {
 
 /**
  * POST /webhook
- * Incoming messages handler
+ * Incoming messages
  */
-exports.handleWebhook = (req, res) => {
+exports.handleWebhook = async (req, res) => {
     try {
         const body = req.body;
 
-        // Basic validation
-        if (body.object) {
-            console.log('📩 Incoming webhook event received');
+        /**
+         * Validate WhatsApp payload
+         */
+        if (
+            body.object &&
+            body.entry &&
+            body.entry[0]?.changes &&
+            body.entry[0].changes[0]?.value?.messages
+        ) {
+            const message = body.entry[0].changes[0].value.messages[0];
 
-            // TODO: Later → pass to messagePipeline
+            const from = message.from; // user phone number
+            const text = message.text?.body;
+
+            console.log('📥 Incoming:', { from, text });
+
+            /**
+             * Pass to pipeline
+             */
+            await messagePipeline.processIncomingMessage({
+                from,
+                text
+            });
 
             return res.sendStatus(200);
         }
@@ -52,7 +71,7 @@ exports.handleWebhook = (req, res) => {
         return res.sendStatus(404);
 
     } catch (error) {
-        console.error('❌ Webhook Processing Error:', error);
+        console.error('❌ Webhook Error:', error.message);
         return res.sendStatus(500);
     }
 };
