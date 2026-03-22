@@ -1,12 +1,15 @@
 /**
  * SOCCOS-AutoBot
- * Message Pipeline (Core Brain)
- * -----------------------------
- * Controls full message lifecycle
+ * FINAL Message Pipeline (Full System Brain)
+ * ------------------------------------------
  */
 
 const whatsappService = require('../services/whatsappService');
 const intentMapper = require('../engine/semantic/intentMapper');
+const queryProcessor = require('../engine/processors/queryProcessor');
+const sessionMemory = require('../data/memory/sessionMemory');
+const searchService = require('../search/searchService');
+const responseGenerator = require('../ai/responseGenerator');
 
 /**
  * Main pipeline handler
@@ -26,42 +29,55 @@ async function processIncomingMessage({ from, text }) {
         }
 
         /**
-         * STEP 2 — Detect intent
+         * STEP 2 — Load session
+         */
+        const session = sessionMemory.getSession(from);
+
+        /**
+         * STEP 3 — Detect intent
          */
         const { intent, confidence } = intentMapper.mapIntent(text);
 
-        console.log('🧠 Intent Detected:', { intent, confidence });
+        console.log('🧠 Intent:', intent, '| Confidence:', confidence);
 
         /**
-         * STEP 3 — Route based on intent
+         * STEP 4 — Update session
          */
-        let response;
+        sessionMemory.updateSession(from, {
+            lastIntent: intent,
+            lastQuery: text
+        });
+
+        /**
+         * STEP 5 — Route logic
+         */
+        let responseText;
 
         switch (intent) {
             case 'greeting':
-                response = handleGreeting();
+                responseText = handleGreeting();
                 break;
 
             case 'menu':
-                response = handleMenu();
+                responseText = handleMenu();
                 break;
 
             case 'search':
-                response = handleSearch(text);
+                responseText = await handleSearch(text);
                 break;
 
             case 'support':
-                response = handleSupport();
+                responseText = handleSupport();
                 break;
 
             default:
-                response = handleFallback(text);
+                responseText = await handleFallback(text);
         }
 
         /**
-         * STEP 4 — Send response
+         * STEP 6 — Send response
          */
-        return await whatsappService.sendText(from, response);
+        return await whatsappService.sendText(from, responseText);
 
     } catch (error) {
         console.error('❌ Pipeline Error:', error.message);
@@ -74,7 +90,7 @@ async function processIncomingMessage({ from, text }) {
 }
 
 /**
- * INTENT HANDLERS
+ * HANDLERS
  */
 
 function handleGreeting() {
@@ -87,20 +103,45 @@ function handleMenu() {
         '1. Search Auto Parts\n' +
         '2. Browse Categories\n' +
         '3. Customer Support\n\n' +
-        'Reply with a number or type your query.'
+        'Type your query directly (e.g., "Civic brake pads")'
     );
 }
 
-function handleSearch(text) {
-    return `🔍 Searching for: "${text}"\n\n(Search system will be connected next 🚀)`;
+async function handleSearch(text) {
+    try {
+        /**
+         * STEP 1 — Process query
+         */
+        const processed = queryProcessor.processQuery(text);
+
+        /**
+         * STEP 2 — Search products
+         */
+        const searchResults = await searchService.searchProducts(
+            processed.normalizedQuery
+        );
+
+        /**
+         * STEP 3 — Generate AI response
+         */
+        const aiResponse = await responseGenerator.generateSearchResponse(
+            searchResults
+        );
+
+        return aiResponse;
+
+    } catch (error) {
+        console.error('❌ Search Handler Error:', error.message);
+        return 'Error searching products. Please try again.';
+    }
 }
 
 function handleSupport() {
     return 'Our support team will assist you shortly.\nPlease describe your issue.';
 }
 
-function handleFallback(text) {
-    return `I didn’t fully understand: "${text}"\n\nType *menu* to see available options.`;
+async function handleFallback(text) {
+    return await responseGenerator.generateFallbackResponse(text);
 }
 
 module.exports = {
