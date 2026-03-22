@@ -1,76 +1,79 @@
 /**
  * SOCCOS-AutoBot
- * Query Processor
- * ----------------
- * Cleans and normalizes user queries
- * Prepares for search layer
+ * Query Processor (FINAL - CLEAN & SEARCH-READY)
+ * ----------------------------------------------
+ * INPUT: text
+ * OUTPUT: normalized query string
+ * NO objects returned
  */
 
-/**
- * Process raw user query
- */
-function processQuery(text = '') {
-    const original = text;
-
+function queryProcessor(text = "") {
+  try {
     /**
-     * STEP 1 — Normalize text
+     * STEP 1 — NORMALIZE
      */
-    let cleaned = text
-        .toLowerCase()
-        .replace(/[^\w\s]/gi, '') // remove special characters
-        .trim();
+    let query = text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s]/gi, ""); // remove special chars
+
+    if (!query) return "";
 
     /**
-     * STEP 2 — Remove stop words
+     * STEP 2 — REMOVE LIGHT STOPWORDS (SAFE ONLY)
      */
     const stopWords = [
-        'price',
-        'buy',
-        'need',
-        'want',
-        'for',
-        'the',
-        'a',
-        'an',
-        'please',
-        'available',
-        'in',
-        'of'
+      "please",
+      "need",
+      "want",
+      "show",
+      "me",
+      "the",
+      "a",
+      "an",
+      "for"
     ];
 
-    const tokens = cleaned
-        .split(' ')
-        .filter(word => !stopWords.includes(word));
+    const tokens = query
+      .split(" ")
+      .filter((word) => word && !stopWords.includes(word));
 
     /**
-     * STEP 3 — Automotive normalization
+     * STEP 3 — JOIN BACK FOR PHRASE NORMALIZATION
      */
-    const synonyms = {
-        'brakepad': 'brake pad',
-        'brakes': 'brake',
-        'oilfilter': 'oil filter',
-        'airfilter': 'air filter',
-        'sparkplug': 'spark plug'
+    query = tokens.join(" ");
+
+    /**
+     * STEP 4 — AUTOMOTIVE NORMALIZATION (PHRASE LEVEL)
+     */
+    const replacements = {
+      brakepad: "brake pad",
+      brakepads: "brake pad",
+      brakes: "brake",
+      oilfilter: "oil filter",
+      airfilter: "air filter",
+      cabinfilter: "cabin filter",
+      sparkplug: "spark plug",
+      sparkplugs: "spark plug"
     };
 
-    const normalizedTokens = tokens.map(word => synonyms[word] || word);
+    Object.keys(replacements).forEach((key) => {
+      if (query.includes(key)) {
+        query = query.replaceAll(key, replacements[key]);
+      }
+    });
 
     /**
-     * STEP 4 — Rebuild query
+     * STEP 5 — FINAL CLEANUP
      */
-    const normalizedQuery = normalizedTokens.join(' ');
+    query = query.trim();
 
-    /**
-     * RETURN structured output
-     */
-    return {
-        original,
-        cleaned,
-        tokens,
-        normalizedQuery
-    };
+    return query;
+
+  } catch (error) {
+    console.error("QueryProcessor Error:", error.message);
+    return "";
+  }
 }
 
-module.exports = {
-    processQuery
-};
+module.exports = queryProcessor;
