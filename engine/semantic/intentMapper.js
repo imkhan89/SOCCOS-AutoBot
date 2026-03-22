@@ -1,44 +1,97 @@
 /**
  * SOCCOS-AutoBot
- * Intent Mapper
+ * Intent Mapper (FINAL - CLEAN & CONSISTENT)
+ * ------------------------------------------
+ * INPUT: text
+ * OUTPUT: intent (string only)
+ * NO objects, NO confidence
  */
 
-function mapIntent(text = '') {
-    const input = text.toLowerCase().trim();
+function intentMapper(text = "") {
+  try {
+    /**
+     * NORMALIZE INPUT
+     */
+    const input = text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s]/gi, ""); // remove punctuation
+
+    if (!input) return "fallback";
 
     /**
      * ORDER SELECTION (number input)
      */
     if (/^\d+$/.test(input)) {
-        return {
-            intent: 'order_select',
-            confidence: 0.95
-        };
+      return "order_select";
     }
 
-    if (input.includes('hi') || input.includes('hello') || input.includes('salam')) {
-        return { intent: 'greeting', confidence: 0.9 };
-    }
-
-    if (input === 'menu' || input.includes('options')) {
-        return { intent: 'menu', confidence: 0.9 };
-    }
-
+    /**
+     * GREETING
+     */
     if (
-        input.includes('price') ||
-        input.includes('buy') ||
-        input.includes('brake') ||
-        input.includes('oil') ||
-        input.includes('filter')
+      input.includes("hi") ||
+      input.includes("hello") ||
+      input.includes("salam") ||
+      input.includes("assalam")
     ) {
-        return { intent: 'search', confidence: 0.8 };
+      return "greeting";
     }
 
-    if (input.includes('help') || input.includes('support')) {
-        return { intent: 'support', confidence: 0.8 };
+    /**
+     * MENU
+     */
+    if (
+      input === "menu" ||
+      input.includes("menu") ||
+      input.includes("options")
+    ) {
+      return "menu";
     }
 
-    return { intent: 'fallback', confidence: 0.5 };
+    /**
+     * SUPPORT
+     */
+    if (
+      input.includes("help") ||
+      input.includes("support") ||
+      input.includes("issue")
+    ) {
+      return "support";
+    }
+
+    /**
+     * SEARCH (AUTOMOTIVE KEYWORDS)
+     */
+    const searchKeywords = [
+      "price",
+      "buy",
+      "order",
+      "brake",
+      "pad",
+      "filter",
+      "oil",
+      "plug",
+      "tyre",
+      "battery",
+      "engine",
+      "civic",
+      "corolla"
+    ];
+
+    if (searchKeywords.some((word) => input.includes(word))) {
+      return "search";
+    }
+
+    /**
+     * DEFAULT FALLBACK
+     */
+    return "fallback";
+
+  } catch (error) {
+    console.error("IntentMapper Error:", error.message);
+    return "fallback";
+  }
 }
 
-module.exports = { mapIntent };
+module.exports = intentMapper;
