@@ -1,67 +1,27 @@
 /**
  * SOCCOS-AutoBot
- * Intent Mapper (FINAL - CLEAN & CONSISTENT)
- * ------------------------------------------
- * INPUT: text
- * OUTPUT: intent (string only)
- * NO objects, NO confidence
+ * Intent Mapper (FINAL - FIXED)
  */
 
 function intentMapper(text = "") {
   try {
-    /**
-     * NORMALIZE INPUT
-     */
     const input = text
       .toLowerCase()
-      .trim()
-      .replace(/[^\w\s]/gi, ""); // remove punctuation
+      .replace(/[^\w\s]/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (!input) return "fallback";
 
     /**
-     * ORDER SELECTION (number input)
+     * ORDER SELECTION
      */
     if (/^\d+$/.test(input)) {
       return "order_select";
     }
 
     /**
-     * GREETING
-     */
-    if (
-      input.includes("hi") ||
-      input.includes("hello") ||
-      input.includes("salam") ||
-      input.includes("assalam")
-    ) {
-      return "greeting";
-    }
-
-    /**
-     * MENU
-     */
-    if (
-      input === "menu" ||
-      input.includes("menu") ||
-      input.includes("options")
-    ) {
-      return "menu";
-    }
-
-    /**
-     * SUPPORT
-     */
-    if (
-      input.includes("help") ||
-      input.includes("support") ||
-      input.includes("issue")
-    ) {
-      return "support";
-    }
-
-    /**
-     * SEARCH (AUTOMOTIVE KEYWORDS)
+     * SEARCH (HIGH PRIORITY)
      */
     const searchKeywords = [
       "price",
@@ -84,8 +44,35 @@ function intentMapper(text = "") {
     }
 
     /**
-     * DEFAULT FALLBACK
+     * MENU
      */
+    if (input === "menu" || input === "options") {
+      return "menu";
+    }
+
+    /**
+     * SUPPORT
+     */
+    if (
+      input === "help" ||
+      input === "support" ||
+      input.includes("problem")
+    ) {
+      return "support";
+    }
+
+    /**
+     * GREETING (LOW PRIORITY)
+     */
+    if (
+      input === "hi" ||
+      input === "hello" ||
+      input === "salam" ||
+      input === "assalam"
+    ) {
+      return "greeting";
+    }
+
     return "fallback";
 
   } catch (error) {
