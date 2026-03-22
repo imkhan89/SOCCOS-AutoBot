@@ -15,7 +15,14 @@ function getSession(userId) {
         sessions[userId] = {
             lastIntent: null,
             lastQuery: null,
-            context: {}
+            context: {},
+            lastResults: [],
+            order: {
+                step: null,
+                product: null,
+                name: null,
+                address: null
+            }
         };
     }
 
@@ -44,7 +51,7 @@ function clearSession(userId) {
 }
 
 /**
- * Get all sessions (for debugging)
+ * Get all sessions (debugging)
  */
 function getAllSessions() {
     return sessions;
