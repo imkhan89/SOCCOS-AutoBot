@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Controller (FINAL - CLEAN)
+ * Webhook Controller (FINAL - FIXED)
  */
 
 const env = require("../config/env");
@@ -8,7 +8,6 @@ const messagePipeline = require("../orchestration/messagePipeline");
 
 /**
  * GET /webhook
- * Meta Verification
  */
 exports.verifyWebhook = (req, res) => {
   try {
@@ -21,7 +20,6 @@ exports.verifyWebhook = (req, res) => {
       return res.status(200).send(challenge);
     }
 
-    console.error("❌ Verification Failed");
     return res.sendStatus(403);
 
   } catch (error) {
@@ -32,30 +30,22 @@ exports.verifyWebhook = (req, res) => {
 
 /**
  * POST /webhook
- * Handle Incoming WhatsApp Messages
  */
 exports.handleWebhook = async (req, res) => {
   try {
     const body = req.body;
 
-    /**
-     * Always acknowledge webhook first (Meta requirement)
-     */
+    // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
-    /**
-     * Validate payload safely
-     */
     const message =
       body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
     if (!message) return;
 
     const from = message.from;
+    if (!from) return;
 
-    /**
-     * Handle different message types
-     */
     let text = "";
 
     if (message.text?.body) {
@@ -65,20 +55,17 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      text = "unsupported";
+      return; // ✅ ignore unsupported messages
     }
 
     console.log("📥 Incoming:", { from, text });
 
-    /**
-     * Pass to pipeline (ONLY CALL)
-     */
-    await messagePipeline({
-      from,
-      text,
-    });
+    await messagePipeline({ from, text });
+
+    return;
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
+    return;
   }
 };
