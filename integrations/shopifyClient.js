@@ -1,15 +1,15 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (Order Creation)
+ * Shopify Client (Retry Enabled)
  */
 
 const axios = require('axios');
 const env = require('../config/env');
 
 /**
- * Create Shopify Order
+ * Create Shopify Order with retry
  */
-async function createOrder(orderData) {
+async function createOrder(orderData, retries = 2) {
     try {
         if (!env.shopify.storeUrl || !env.shopify.accessToken) {
             console.warn('⚠️ Shopify not configured');
@@ -48,7 +48,12 @@ async function createOrder(orderData) {
         return response.data.order;
 
     } catch (error) {
-        console.error('❌ Shopify Order Error:', error.response?.data || error.message);
+        if (retries > 0) {
+            console.warn('🔁 Retrying Shopify order...');
+            return createOrder(orderData, retries - 1);
+        }
+
+        console.error('❌ Shopify Failed:', error.message);
         return null;
     }
 }
