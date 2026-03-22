@@ -1,28 +1,27 @@
 /**
  * SOCCOS-AutoBot
- * Query Processor (FINAL - CLEAN & SEARCH-READY)
- * ----------------------------------------------
- * INPUT: text
- * OUTPUT: normalized query string
- * NO objects returned
+ * Query Processor (FINAL - FIXED)
  */
 
 function queryProcessor(text = "") {
   try {
+    if (typeof text !== "string") return "";
+
     /**
      * STEP 1 — NORMALIZE
      */
     let query = text
       .toLowerCase()
-      .trim()
-      .replace(/[^\w\s]/gi, ""); // remove special chars
+      .replace(/[^\w\s]/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (!query) return "";
 
     /**
-     * STEP 2 — REMOVE LIGHT STOPWORDS (SAFE ONLY)
+     * STEP 2 — REMOVE SAFE STOPWORDS
      */
-    const stopWords = [
+    const stopWords = new Set([
       "please",
       "need",
       "want",
@@ -32,19 +31,21 @@ function queryProcessor(text = "") {
       "a",
       "an",
       "for"
-    ];
+    ]);
 
-    const tokens = query
+    let tokens = query
       .split(" ")
-      .filter((word) => word && !stopWords.includes(word));
+      .filter((word) => word && !stopWords.has(word));
+
+    if (tokens.length === 0) return "";
 
     /**
-     * STEP 3 — JOIN BACK FOR PHRASE NORMALIZATION
+     * STEP 3 — REJOIN
      */
     query = tokens.join(" ");
 
     /**
-     * STEP 4 — AUTOMOTIVE NORMALIZATION (PHRASE LEVEL)
+     * STEP 4 — AUTOMOTIVE NORMALIZATION
      */
     const replacements = {
       brakepad: "brake pad",
@@ -57,16 +58,16 @@ function queryProcessor(text = "") {
       sparkplugs: "spark plug"
     };
 
-    Object.keys(replacements).forEach((key) => {
+    for (const key in replacements) {
       if (query.includes(key)) {
-        query = query.replaceAll(key, replacements[key]);
+        query = query.split(key).join(replacements[key]);
       }
-    });
+    }
 
     /**
-     * STEP 5 — FINAL CLEANUP
+     * STEP 5 — FINAL CLEAN
      */
-    query = query.trim();
+    query = query.replace(/\s+/g, " ").trim();
 
     return query;
 
