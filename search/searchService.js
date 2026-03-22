@@ -1,60 +1,53 @@
 /**
  * SOCCOS-AutoBot
- * Search Service
- * ----------------
- * Handles product search via Algolia
+ * Search Service (FINAL - FIXED)
  */
 
-const { index } = require('./algoliaClient');
-const queryProcessor = require('../engine/processors/queryProcessor');
+const index = require("./algoliaClient");
+const queryProcessor = require("../engine/processors/queryProcessor");
 
 /**
- * Search products
+ * SEARCH PRODUCTS
  */
 async function searchProducts(rawQuery) {
-    try {
-        /**
-         * STEP 1 — Process query
-         */
-        const processed = queryProcessor.processQuery(rawQuery);
+  try {
+    /**
+     * STEP 1 — PROCESS QUERY
+     */
+    const query = queryProcessor(rawQuery);
 
-        console.log('🔍 Processed Query:', processed.normalizedQuery);
+    if (!query) return [];
 
-        /**
-         * STEP 2 — Search Algolia
-         */
-        const results = await index.search(processed.normalizedQuery, {
-            hitsPerPage: 5
-        });
+    console.log("🔍 Query:", query);
 
-        /**
-         * STEP 3 — Format results (clean structure)
-         */
-        const products = results.hits.map(hit => ({
-            id: hit.objectID,
-            name: hit.name || hit.title,
-            price: hit.price || hit.sale_price,
-            image: hit.image || hit.thumbnail,
-            url: hit.url || hit.product_url
-        }));
+    /**
+     * STEP 2 — ALGOLIA SEARCH
+     */
+    const response = await index.search(query, {
+      hitsPerPage: 5,
+    });
 
-        return {
-            query: processed.normalizedQuery,
-            total: results.nbHits,
-            products
-        };
+    const hits = response?.hits || [];
 
-    } catch (error) {
-        console.error('❌ Search Error:', error.message);
+    /**
+     * STEP 3 — NORMALIZE RESULTS
+     */
+    const products = hits.map((hit) => ({
+      id: hit.objectID || "",
+      name: hit.name || hit.title || "Product",
+      price: hit.price || hit.sale_price || "",
+      image: hit.image || hit.thumbnail || "",
+      url: hit.url || hit.product_url || "",
+    }));
 
-        return {
-            query: rawQuery,
-            total: 0,
-            products: []
-        };
-    }
+    return products;
+
+  } catch (error) {
+    console.error("❌ Search Error:", error.message);
+    return [];
+  }
 }
 
 module.exports = {
-    searchProducts
+  searchProducts,
 };
