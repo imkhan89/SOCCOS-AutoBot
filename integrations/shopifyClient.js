@@ -1,48 +1,58 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (Optional)
- * --------------------------
- * Basic Shopify integration stub
+ * Shopify Client (Order Creation)
  */
 
 const axios = require('axios');
 const env = require('../config/env');
 
 /**
- * Check if Shopify is configured
+ * Create Shopify Order
  */
-function isShopifyConfigured() {
-    return env.shopify.storeUrl && env.shopify.accessToken;
-}
-
-/**
- * Fetch products (basic example)
- */
-async function fetchProducts() {
+async function createOrder(orderData) {
     try {
-        if (!isShopifyConfigured()) {
+        if (!env.shopify.storeUrl || !env.shopify.accessToken) {
             console.warn('⚠️ Shopify not configured');
-            return [];
+            return null;
         }
 
-        const url = `https://${env.shopify.storeUrl}/admin/api/2023-10/products.json`;
+        const url = `https://${env.shopify.storeUrl}/admin/api/2023-10/orders.json`;
 
-        const response = await axios.get(url, {
+        const payload = {
+            order: {
+                line_items: [
+                    {
+                        title: orderData.product.name,
+                        price: orderData.product.price,
+                        quantity: 1
+                    }
+                ],
+                customer: {
+                    first_name: orderData.name
+                },
+                shipping_address: {
+                    address1: orderData.address,
+                    country: "Pakistan"
+                },
+                financial_status: "pending"
+            }
+        };
+
+        const response = await axios.post(url, payload, {
             headers: {
                 'X-Shopify-Access-Token': env.shopify.accessToken,
                 'Content-Type': 'application/json'
             }
         });
 
-        return response.data.products || [];
+        return response.data.order;
 
     } catch (error) {
-        console.error('❌ Shopify Fetch Error:', error.message);
-        return [];
+        console.error('❌ Shopify Order Error:', error.response?.data || error.message);
+        return null;
     }
 }
 
 module.exports = {
-    fetchProducts,
-    isShopifyConfigured
+    createOrder
 };
