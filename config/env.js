@@ -1,63 +1,57 @@
 /**
  * SOCCOS-AutoBot
- * Environment Configuration Loader
- * ---------------------------------
- * Centralized environment management
- * Validates all required variables
+ * Environment Config (FINAL - PRODUCTION SAFE)
  */
 
-require('dotenv').config();
+require("dotenv").config();
 
 /**
- * Helper to safely fetch environment variables
+ * SAFE ENV FETCH (NO CRASH)
  */
-function getEnv(key, required = true) {
-    const value = process.env[key];
+function getEnv(key, required = false) {
+  const value = process.env[key];
 
-    if (!value && required) {
-        console.error(`❌ Missing required environment variable: ${key}`);
-        process.exit(1);
-    }
+  if (!value && required) {
+    console.warn(`⚠️ Missing env: ${key}`);
+  }
 
-    return value;
+  return value || null;
 }
 
 /**
- * Environment Configuration Object
+ * CONFIG
  */
 const env = {
-    app: {
-        port: getEnv('PORT', false) || 3000,
-        nodeEnv: getEnv('NODE_ENV', false) || 'development',
-    },
+  app: {
+    port: process.env.PORT || 3000,
+    nodeEnv: process.env.NODE_ENV || "development",
+  },
 
-    whatsapp: {
-        token: getEnv('WHATSAPP_TOKEN'),
-        phoneNumberId: getEnv('WHATSAPP_PHONE_NUMBER_ID'),
-        verifyToken: getEnv('WHATSAPP_VERIFY_TOKEN'),
-        apiVersion: getEnv('WHATSAPP_API_VERSION', false) || 'v18.0',
-    },
+  whatsapp: {
+    token: getEnv("WHATSAPP_TOKEN", true),
+    phoneNumberId: getEnv("WHATSAPP_PHONE_NUMBER_ID", true),
+    verifyToken: getEnv("WHATSAPP_VERIFY_TOKEN", true),
+    apiVersion: process.env.WHATSAPP_API_VERSION || "v18.0",
+  },
 
-    openai: {
-        apiKey: getEnv('OPENAI_API_KEY'),
-        model: getEnv('OPENAI_MODEL', false) || 'gpt-4o-mini',
-    },
+  // OPTIONAL
+  openai: {
+    apiKey: getEnv("OPENAI_API_KEY"),
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  },
 
-    algolia: {
-        appId: getEnv('ALGOLIA_APP_ID'),
-        apiKey: getEnv('ALGOLIA_API_KEY'),
-        indexName: getEnv('ALGOLIA_INDEX_NAME'),
-    },
+  algolia: {
+    appId: getEnv("ALGOLIA_APP_ID"),
+    apiKey: getEnv("ALGOLIA_API_KEY"),
+    indexName: getEnv("ALGOLIA_INDEX_NAME"),
+  },
 
-    shopify: {
-        storeUrl: getEnv('SHOPIFY_STORE_URL', false),
-        accessToken: getEnv('SHOPIFY_ACCESS_TOKEN', false),
-    },
+  shopify: {
+    storeUrl: getEnv("SHOPIFY_STORE_URL"),
+    accessToken: getEnv("SHOPIFY_ACCESS_TOKEN"),
+  },
 };
 
-/**
- * Freeze config to prevent mutation
- */
 Object.freeze(env);
 
 module.exports = env;
