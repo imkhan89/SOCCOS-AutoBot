@@ -1,14 +1,12 @@
 /**
  * SOCCOS-AutoBot
- * Session Memory
- * ----------------
- * In-memory session storage (per user)
+ * Session Memory (Bulletproof)
  */
 
 const sessions = {};
 
 /**
- * Get session by phone number
+ * Get session
  */
 function getSession(userId) {
     if (!sessions[userId]) {
@@ -21,11 +19,11 @@ function getSession(userId) {
                 step: null,
                 product: null,
                 name: null,
-                address: null
+                address: null,
+                isProcessing: false
             }
         };
     }
-
     return sessions[userId];
 }
 
@@ -37,7 +35,11 @@ function updateSession(userId, data = {}) {
 
     sessions[userId] = {
         ...session,
-        ...data
+        ...data,
+        order: {
+            ...session.order,
+            ...(data.order || {})
+        }
     };
 
     return sessions[userId];
@@ -50,16 +52,8 @@ function clearSession(userId) {
     delete sessions[userId];
 }
 
-/**
- * Get all sessions (debugging)
- */
-function getAllSessions() {
-    return sessions;
-}
-
 module.exports = {
     getSession,
     updateSession,
-    clearSession,
-    getAllSessions
+    clearSession
 };
