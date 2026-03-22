@@ -1,7 +1,7 @@
 /**
  * SOCCOS-AutoBot
- * FINAL Message Pipeline (Full System Brain)
- * ------------------------------------------
+ * FINAL Message Pipeline (Sales Optimized)
+ * ----------------------------------------
  */
 
 const whatsappService = require('../services/whatsappService');
@@ -94,19 +94,33 @@ async function processIncomingMessage({ from, text }) {
  */
 
 function handleGreeting() {
-    return 'Welcome to NDES AutoBot 🚗\nHow can I assist you today?\n\nType *menu* to explore options.';
-}
-
-function handleMenu() {
     return (
-        'Main Menu:\n\n' +
-        '1. Search Auto Parts\n' +
-        '2. Browse Categories\n' +
-        '3. Customer Support\n\n' +
-        'Type your query directly (e.g., "Civic brake pads")'
+        'Welcome to NDES AutoBot 🚗\n\n' +
+        'Find genuine auto parts in seconds.\n\n' +
+        '👉 Type your car + part\n' +
+        'Example: "Civic brake pads 2018"\n\n' +
+        'Or type *menu* to explore.'
     );
 }
 
+/**
+ * SALES-OPTIMIZED MENU
+ */
+function handleMenu() {
+    return (
+        '🚗 *NDES AutoBot*\n\n' +
+        'What are you looking for today?\n\n' +
+        '1️⃣ Search Auto Parts\n' +
+        '2️⃣ Best Deals\n' +
+        '3️⃣ Customer Support\n\n' +
+        '💡 Example: "Civic brake pads 2018"\n\n' +
+        '⚡ Fast delivery across Pakistan'
+    );
+}
+
+/**
+ * 🔥 UPGRADE 2 — GUIDED SELLING SEARCH
+ */
 async function handleSearch(text) {
     try {
         /**
@@ -128,7 +142,14 @@ async function handleSearch(text) {
             searchResults
         );
 
-        return aiResponse;
+        /**
+         * 🔥 SALES CTA (KEY UPGRADE)
+         */
+        return (
+            aiResponse +
+            '\n\n👉 Reply with product number to order' +
+            '\n👉 Or type *menu* for more options'
+        );
 
     } catch (error) {
         console.error('❌ Search Handler Error:', error.message);
@@ -137,7 +158,11 @@ async function handleSearch(text) {
 }
 
 function handleSupport() {
-    return 'Our support team will assist you shortly.\nPlease describe your issue.';
+    return (
+        '🤝 Customer Support\n\n' +
+        'Please describe your issue.\n' +
+        'Our team will assist you shortly.'
+    );
 }
 
 async function handleFallback(text) {
