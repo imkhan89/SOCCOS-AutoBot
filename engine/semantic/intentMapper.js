@@ -1,86 +1,44 @@
 /**
  * SOCCOS-AutoBot
  * Intent Mapper
- * ----------------
- * Detects user intent from text
- * Rule-based (Phase 1)
  */
 
-/**
- * Map user message to intent
- */
 function mapIntent(text = '') {
     const input = text.toLowerCase().trim();
 
     /**
-     * GREETING
+     * ORDER SELECTION (number input)
      */
-    if (
-        input.includes('hi') ||
-        input.includes('hello') ||
-        input.includes('salam')
-    ) {
+    if (/^\d+$/.test(input)) {
         return {
-            intent: 'greeting',
-            confidence: 0.9
+            intent: 'order_select',
+            confidence: 0.95
         };
     }
 
-    /**
-     * MENU
-     */
-    if (
-        input === 'menu' ||
-        input.includes('options') ||
-        input.includes('start')
-    ) {
-        return {
-            intent: 'menu',
-            confidence: 0.9
-        };
+    if (input.includes('hi') || input.includes('hello') || input.includes('salam')) {
+        return { intent: 'greeting', confidence: 0.9 };
     }
 
-    /**
-     * SEARCH / PRODUCT QUERY
-     */
+    if (input === 'menu' || input.includes('options')) {
+        return { intent: 'menu', confidence: 0.9 };
+    }
+
     if (
         input.includes('price') ||
         input.includes('buy') ||
-        input.includes('available') ||
-        input.includes('filter') ||
         input.includes('brake') ||
         input.includes('oil') ||
-        input.includes('plug')
+        input.includes('filter')
     ) {
-        return {
-            intent: 'search',
-            confidence: 0.8
-        };
+        return { intent: 'search', confidence: 0.8 };
     }
 
-    /**
-     * SUPPORT
-     */
-    if (
-        input.includes('help') ||
-        input.includes('support') ||
-        input.includes('issue')
-    ) {
-        return {
-            intent: 'support',
-            confidence: 0.8
-        };
+    if (input.includes('help') || input.includes('support')) {
+        return { intent: 'support', confidence: 0.8 };
     }
 
-    /**
-     * FALLBACK
-     */
-    return {
-        intent: 'fallback',
-        confidence: 0.5
-    };
+    return { intent: 'fallback', confidence: 0.5 };
 }
 
-module.exports = {
-    mapIntent
-};
+module.exports = { mapIntent };
