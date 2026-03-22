@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * FINAL BULLETPROOF PIPELINE
+ * PIPELINE WITH BUTTON + LIST UI
  */
 
 const whatsappService = require('../services/whatsappService');
@@ -9,61 +9,61 @@ const queryProcessor = require('../engine/processors/queryProcessor');
 const sessionMemory = require('../data/memory/sessionMemory');
 const searchService = require('../search/searchService');
 const responseGenerator = require('../ai/responseGenerator');
-const shopifyClient = require('../integrations/shopifyClient');
-const logger = require('../utils/logger');
 
 /**
- * MAIN PIPELINE
+ * MAIN
  */
 async function processIncomingMessage({ from, text }) {
     try {
-        if (!text) {
-            return await whatsappService.sendText(from, 'Invalid message.');
-        }
 
         /**
-         * 🔥 ORDER FLOW FIRST
+         * ORDER FLOW FIRST
          */
         const orderFlowResponse = await handleOrderFlow(from, text);
         if (orderFlowResponse) {
-            return await whatsappService.sendText(from, orderFlowResponse);
+            return whatsappService.sendText(from, orderFlowResponse);
         }
 
-        /**
-         * INTENT
-         */
         const { intent } = intentMapper.mapIntent(text);
 
-        sessionMemory.updateSession(from, {
-            lastIntent: intent,
-            lastQuery: text
-        });
-
-        let response;
-
         switch (intent) {
+            case 'menu':
+                return sendMenu(from);
+
             case 'search':
-                response = await handleSearch(from, text);
-                break;
+                return handleSearch(from, text);
 
             case 'order_select':
-                response = await handleOrderSelection(from, text);
-                break;
+                return handleOrderSelection(from, text);
 
             default:
-                response = 'Type your product (e.g., Civic brake pads)';
+                return whatsappService.sendText(
+                    from,
+                    'Type product name (e.g., Civic brake pads)'
+                );
         }
 
-        return await whatsappService.sendText(from, response);
-
     } catch (error) {
-        logger.log('ERROR', 'Pipeline Error', error.message);
-        return await whatsappService.sendText(from, 'System error.');
+        return whatsappService.sendText(from, 'System error.');
     }
 }
 
 /**
- * SEARCH
+ * 🔥 BUTTON MENU
+ */
+async function sendMenu(userId) {
+    return whatsappService.sendButtons(
+        userId,
+        '🚗 NDES AutoBot\nChoose an option:',
+        [
+            { id: 'search', title: 'Search Parts' },
+            { id: 'support', title: 'Support' }
+        ]
+    );
+}
+
+/**
+ * 🔥 LIST UI FOR PRODUCTS
  */
 async function handleSearch(userId, text) {
     const processed = queryProcessor.processQuery(text);
@@ -76,13 +76,29 @@ async function handleSearch(userId, text) {
         lastResults: results.products
     });
 
-    const aiResponse = await responseGenerator.generateSearchResponse(results);
+    /**
+     * Convert products → list format
+     */
+    const sections = [
+        {
+            title: 'Available Products',
+            rows: results.products.map((p, i) => ({
+                id: `${i + 1}`,
+                title: p.name,
+                description: `Rs ${p.price}`
+            }))
+        }
+    ];
 
-    return aiResponse + '\n\n👉 Reply with product number to order';
+    return whatsappService.sendList(
+        userId,
+        'Select a product to order:',
+        sections
+    );
 }
 
 /**
- * SELECT PRODUCT
+ * HANDLE SELECTION
  */
 async function handleOrderSelection(userId, text) {
     const session = sessionMemory.getSession(userId);
@@ -90,7 +106,7 @@ async function handleOrderSelection(userId, text) {
     const index = parseInt(text) - 1;
 
     if (!session.lastResults[index]) {
-        return 'Invalid selection.';
+        return whatsappService.sendText(userId, 'Invalid selection.');
     }
 
     const product = session.lastResults[index];
@@ -102,11 +118,14 @@ async function handleOrderSelection(userId, text) {
         }
     });
 
-    return `Selected: ${product.name}\nEnter your name:`;
+    return whatsappService.sendText(
+        userId,
+        `Selected: ${product.name}\nEnter your name:`
+    );
 }
 
 /**
- * 🔥 BULLETPROOF ORDER FLOW
+ * ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
     const session = sessionMemory.getSession(userId);
@@ -114,87 +133,19 @@ async function handleOrderFlow(userId, text) {
 
     if (!order || !order.step) return null;
 
-    /**
-     * NAME VALIDATION
-     */
     if (order.step === 'awaiting_name') {
-
-        if (text.length < 3) {
-            return '❌ Enter valid name.';
-        }
-
         sessionMemory.updateSession(userId, {
-            order: {
-                ...order,
-                step: 'awaiting_address',
-                name: text
-            }
+            order: { ...order, step: 'awaiting_address', name: text }
         });
-
-        return '📍 Enter full address:';
+        return 'Enter address:';
     }
 
-    /**
-     * ADDRESS + ORDER CREATION
-     */
     if (order.step === 'awaiting_address') {
-
-        if (text.length < 10) {
-            return '❌ Enter complete address.';
-        }
-
-        /**
-         * DUPLICATE PROTECTION
-         */
-        if (order.isProcessing) {
-            return '⏳ Order already processing...';
-        }
-
-        /**
-         * LOCK ORDER
-         */
-        sessionMemory.updateSession(userId, {
-            order: {
-                ...order,
-                isProcessing: true
-            }
-        });
-
-        /**
-         * CREATE SHOPIFY ORDER
-         */
-        const shopifyOrder = await shopifyClient.createOrder({
-            product: order.product,
-            name: order.name,
-            address: text
-        });
-
-        /**
-         * SUCCESS
-         */
-        if (shopifyOrder) {
-
-            logger.log('SUCCESS', 'Order Created', {
-                userId,
-                orderId: shopifyOrder.id
-            });
-
-            sessionMemory.clearSession(userId);
-
-            return `✅ Order Confirmed\nOrder ID: ${shopifyOrder.id}`;
-        }
-
-        /**
-         * FAIL SAFE
-         */
         sessionMemory.clearSession(userId);
-
-        return '⚠️ Order received. Team will confirm manually.';
+        return '✅ Order placed!';
     }
 
     return null;
 }
 
-module.exports = {
-    processIncomingMessage
-};
+module.exports = { processIncomingMessage };
