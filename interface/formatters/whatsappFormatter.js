@@ -1,74 +1,112 @@
 /**
  * SOCCOS-AutoBot
- * WhatsApp Formatter
- * -------------------
- * Responsible ONLY for formatting messages
- * No business logic allowed
+ * WhatsApp Formatter (FINAL - SAFE)
+ * --------------------------------
+ * ONLY formatting
+ * NO business logic
  */
 
 /**
- * Format simple text message
+ * TEXT MESSAGE
  */
 function formatTextMessage(to, message) {
-    return {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "text",
-        text: {
-            body: message
-        }
-    };
+  return {
+    messaging_product: "whatsapp",
+    to,
+    type: "text",
+    text: {
+      body: message || "",
+    },
+  };
 }
 
 /**
- * Format button message
+ * BUTTON MESSAGE
+ * Max 3 buttons (WhatsApp limit)
  */
 function formatButtonMessage(to, bodyText, buttons = []) {
-    return {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "interactive",
-        interactive: {
-            type: "button",
-            body: {
-                text: bodyText
-            },
-            action: {
-                buttons: buttons.map((btn, index) => ({
-                    type: "reply",
-                    reply: {
-                        id: btn.id || `btn_${index}`,
-                        title: btn.title
-                    }
-                }))
-            }
-        }
-    };
+  const safeButtons = (buttons || []).slice(0, 3).map((btn, index) => ({
+    type: "reply",
+    reply: {
+      id: btn.id || `btn_${index}`,
+      title: (btn.title || "Option").substring(0, 20),
+    },
+  }));
+
+  return {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text: bodyText || "",
+      },
+      action: {
+        buttons: safeButtons,
+      },
+    },
+  };
 }
 
 /**
- * Format list message
+ * LIST MESSAGE
+ * Max 10 rows per section (WhatsApp limit)
  */
 function formatListMessage(to, bodyText, sections = []) {
-    return {
-        messaging_product: "whatsapp",
-        to: to,
-        type: "interactive",
-        interactive: {
-            type: "list",
-            body: {
-                text: bodyText
-            },
-            action: {
-                button: "View Options",
-                sections: sections
-            }
-        }
-    };
+  const safeSections = (sections || []).map((section) => ({
+    title: section.title || "Options",
+    rows: (section.rows || []).slice(0, 10).map((row, index) => ({
+      id: row.id || `row_${index}`,
+      title: (row.title || "Item").substring(0, 24),
+      description: (row.description || "").substring(0, 72),
+    })),
+  }));
+
+  return {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: {
+        text: bodyText || "",
+      },
+      action: {
+        button: "View Options",
+        sections: safeSections,
+      },
+    },
+  };
+}
+
+/**
+ * OPTIONAL: HEADER SUPPORT (for future scaling)
+ */
+function formatTextWithHeader(to, headerText, bodyText) {
+  return {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      header: {
+        type: "text",
+        text: headerText || "",
+      },
+      body: {
+        text: bodyText || "",
+      },
+      action: {
+        buttons: [],
+      },
+    },
+  };
 }
 
 module.exports = {
-    formatTextMessage,
-    formatButtonMessage,
-    formatListMessage
+  formatTextMessage,
+  formatButtonMessage,
+  formatListMessage,
+  formatTextWithHeader,
 };
