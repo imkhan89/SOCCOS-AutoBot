@@ -1,11 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * WhatsApp Service (FINAL - CLEAN & SAFE)
- * ---------------------------------------
- * ONLY:
- * - Calls formatter
- * - Calls sender
- * NO business logic
+ * WhatsApp Service (FINAL - FIXED)
  */
 
 const formatter = require("../interface/formatters/whatsappFormatter");
@@ -16,14 +11,16 @@ const sender = require("../interface/sender/whatsappSender");
  */
 async function sendText(to, message) {
   try {
-    if (!to || !message) return;
+    if (!to || !message) return null;
 
     const payload = formatter.formatTextMessage(to, message);
+    if (!payload) return null;
 
-    await sender.send(payload);
+    return await sender.send(payload);
 
   } catch (error) {
     console.error("❌ WhatsApp sendText error:", error.message);
+    return null;
   }
 }
 
@@ -32,7 +29,7 @@ async function sendText(to, message) {
  */
 async function sendButtons(to, bodyText, buttons = []) {
   try {
-    if (!to || !bodyText) return;
+    if (!to || !bodyText) return null;
 
     const payload = formatter.formatButtonMessage(
       to,
@@ -40,10 +37,13 @@ async function sendButtons(to, bodyText, buttons = []) {
       buttons
     );
 
-    await sender.send(payload);
+    if (!payload) return null;
+
+    return await sender.send(payload);
 
   } catch (error) {
     console.error("❌ WhatsApp sendButtons error:", error.message);
+    return null;
   }
 }
 
@@ -52,7 +52,7 @@ async function sendButtons(to, bodyText, buttons = []) {
  */
 async function sendList(to, bodyText, sections = []) {
   try {
-    if (!to || !bodyText) return;
+    if (!to || !bodyText) return null;
 
     const payload = formatter.formatListMessage(
       to,
@@ -60,10 +60,13 @@ async function sendList(to, bodyText, sections = []) {
       sections
     );
 
-    await sender.send(payload);
+    if (!payload) return null;
+
+    return await sender.send(payload);
 
   } catch (error) {
     console.error("❌ WhatsApp sendList error:", error.message);
+    return null;
   }
 }
 
