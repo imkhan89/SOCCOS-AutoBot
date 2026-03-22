@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * FINAL Message Pipeline WITH ORDER + SHOPIFY INTEGRATION
+ * FINAL BULLETPROOF PIPELINE
  */
 
 const whatsappService = require('../services/whatsappService');
@@ -10,20 +10,19 @@ const sessionMemory = require('../data/memory/sessionMemory');
 const searchService = require('../search/searchService');
 const responseGenerator = require('../ai/responseGenerator');
 const shopifyClient = require('../integrations/shopifyClient');
+const logger = require('../utils/logger');
 
 /**
  * MAIN PIPELINE
  */
 async function processIncomingMessage({ from, text }) {
     try {
-        console.log('📩 Incoming:', { from, text });
-
         if (!text) {
-            return await whatsappService.sendText(from, 'Message not understood.');
+            return await whatsappService.sendText(from, 'Invalid message.');
         }
 
         /**
-         * 🔥 ORDER FLOW PRIORITY
+         * 🔥 ORDER FLOW FIRST
          */
         const orderFlowResponse = await handleOrderFlow(from, text);
         if (orderFlowResponse) {
@@ -31,81 +30,40 @@ async function processIncomingMessage({ from, text }) {
         }
 
         /**
-         * INTENT DETECTION
+         * INTENT
          */
         const { intent } = intentMapper.mapIntent(text);
 
-        /**
-         * SAVE SESSION
-         */
         sessionMemory.updateSession(from, {
             lastIntent: intent,
             lastQuery: text
         });
 
-        let responseText;
+        let response;
 
         switch (intent) {
-            case 'greeting':
-                responseText = handleGreeting();
-                break;
-
-            case 'menu':
-                responseText = handleMenu();
-                break;
-
             case 'search':
-                responseText = await handleSearch(from, text);
+                response = await handleSearch(from, text);
                 break;
 
             case 'order_select':
-                responseText = await handleOrderSelection(from, text);
-                break;
-
-            case 'support':
-                responseText = handleSupport();
+                response = await handleOrderSelection(from, text);
                 break;
 
             default:
-                responseText = await handleFallback(text);
+                response = 'Type your product (e.g., Civic brake pads)';
         }
 
-        return await whatsappService.sendText(from, responseText);
+        return await whatsappService.sendText(from, response);
 
     } catch (error) {
-        console.error('❌ Pipeline Error:', error.message);
-
-        return await whatsappService.sendText(
-            from,
-            'Something went wrong. Please try again later.'
-        );
+        logger.log('ERROR', 'Pipeline Error', error.message);
+        return await whatsappService.sendText(from, 'System error.');
     }
 }
 
 /**
- * HANDLERS
- */
-
-function handleGreeting() {
-    return (
-        'Welcome to NDES AutoBot 🚗\n\n' +
-        'Type your car + part\n' +
-        'Example: Civic brake pads 2018\n\n' +
-        'Or type *menu*'
-    );
-}
-
-function handleMenu() {
-    return (
-        '🚗 *NDES AutoBot*\n\n' +
-        '1️⃣ Search Auto Parts\n' +
-        '2️⃣ Customer Support\n\n' +
-        '💡 Example: Civic oil filter'
-    );
-}
-
-/**
- * SEARCH HANDLER
+ * SEARCH
  */
 async function handleSearch(userId, text) {
     const processed = queryProcessor.processQuery(text);
@@ -114,31 +72,25 @@ async function handleSearch(userId, text) {
         processed.normalizedQuery
     );
 
-    /**
-     * STORE RESULTS FOR ORDER SELECTION
-     */
     sessionMemory.updateSession(userId, {
         lastResults: results.products
     });
 
     const aiResponse = await responseGenerator.generateSearchResponse(results);
 
-    return (
-        aiResponse +
-        '\n\n👉 Reply with product number to order'
-    );
+    return aiResponse + '\n\n👉 Reply with product number to order';
 }
 
 /**
- * PRODUCT SELECTION
+ * SELECT PRODUCT
  */
 async function handleOrderSelection(userId, text) {
     const session = sessionMemory.getSession(userId);
 
     const index = parseInt(text) - 1;
 
-    if (!session.lastResults || !session.lastResults[index]) {
-        return 'Invalid selection. Please try again.';
+    if (!session.lastResults[index]) {
+        return 'Invalid selection.';
     }
 
     const product = session.lastResults[index];
@@ -150,14 +102,11 @@ async function handleOrderSelection(userId, text) {
         }
     });
 
-    return (
-        `🛒 Selected:\n${product.name}\n\n` +
-        'Please enter your name:'
-    );
+    return `Selected: ${product.name}\nEnter your name:`;
 }
 
 /**
- * 🔥 ORDER FLOW WITH SHOPIFY
+ * 🔥 BULLETPROOF ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
     const session = sessionMemory.getSession(userId);
@@ -166,9 +115,14 @@ async function handleOrderFlow(userId, text) {
     if (!order || !order.step) return null;
 
     /**
-     * STEP 1 — NAME
+     * NAME VALIDATION
      */
     if (order.step === 'awaiting_name') {
+
+        if (text.length < 3) {
+            return '❌ Enter valid name.';
+        }
+
         sessionMemory.updateSession(userId, {
             order: {
                 ...order,
@@ -177,25 +131,37 @@ async function handleOrderFlow(userId, text) {
             }
         });
 
-        return '📍 Please enter your delivery address:';
+        return '📍 Enter full address:';
     }
 
     /**
-     * STEP 2 — ADDRESS + SHOPIFY ORDER
+     * ADDRESS + ORDER CREATION
      */
     if (order.step === 'awaiting_address') {
 
-        // Save address
+        if (text.length < 10) {
+            return '❌ Enter complete address.';
+        }
+
+        /**
+         * DUPLICATE PROTECTION
+         */
+        if (order.isProcessing) {
+            return '⏳ Order already processing...';
+        }
+
+        /**
+         * LOCK ORDER
+         */
         sessionMemory.updateSession(userId, {
             order: {
                 ...order,
-                step: 'confirmed',
-                address: text
+                isProcessing: true
             }
         });
 
         /**
-         * 🔥 CREATE SHOPIFY ORDER
+         * CREATE SHOPIFY ORDER
          */
         const shopifyOrder = await shopifyClient.createOrder({
             product: order.product,
@@ -204,41 +170,29 @@ async function handleOrderFlow(userId, text) {
         });
 
         /**
-         * SUCCESS RESPONSE
+         * SUCCESS
          */
         if (shopifyOrder) {
-            return (
-                `✅ *Order Confirmed!*\n\n` +
-                `🆔 Order ID: ${shopifyOrder.id}\n` +
-                `Product: ${order.product.name}\n\n` +
-                `🚚 Cash on Delivery\n` +
-                `Our team will contact you shortly.`
-            );
+
+            logger.log('SUCCESS', 'Order Created', {
+                userId,
+                orderId: shopifyOrder.id
+            });
+
+            sessionMemory.clearSession(userId);
+
+            return `✅ Order Confirmed\nOrder ID: ${shopifyOrder.id}`;
         }
 
         /**
-         * FALLBACK RESPONSE
+         * FAIL SAFE
          */
-        return (
-            `✅ Order Received!\n\n` +
-            `Product: ${order.product.name}\n\n` +
-            `Our team will contact you shortly.`
-        );
+        sessionMemory.clearSession(userId);
+
+        return '⚠️ Order received. Team will confirm manually.';
     }
 
     return null;
-}
-
-function handleSupport() {
-    return (
-        '🤝 Customer Support\n\n' +
-        'Please describe your issue.\n' +
-        'Our team will assist you shortly.'
-    );
-}
-
-async function handleFallback(text) {
-    return await responseGenerator.generateFallbackResponse(text);
 }
 
 module.exports = {
