@@ -1,7 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * FINAL Message Pipeline (Sales Optimized)
- * ----------------------------------------
+ * FINAL Message Pipeline WITH ORDER SYSTEM
  */
 
 const whatsappService = require('../services/whatsappService');
@@ -12,45 +11,37 @@ const searchService = require('../search/searchService');
 const responseGenerator = require('../ai/responseGenerator');
 
 /**
- * Main pipeline handler
+ * MAIN PIPELINE
  */
 async function processIncomingMessage({ from, text }) {
     try {
-        console.log('📩 Incoming Message:', { from, text });
+        console.log('📩 Incoming:', { from, text });
 
-        /**
-         * STEP 1 — Validate input
-         */
         if (!text) {
-            return await whatsappService.sendText(
-                from,
-                'Sorry, I could not understand your message.'
-            );
+            return await whatsappService.sendText(from, 'Message not understood.');
         }
 
         /**
-         * STEP 2 — Load session
+         * 🔥 ORDER FLOW CHECK (PRIORITY)
          */
-        const session = sessionMemory.getSession(from);
+        const orderFlowResponse = await handleOrderFlow(from, text);
+        if (orderFlowResponse) {
+            return await whatsappService.sendText(from, orderFlowResponse);
+        }
 
         /**
-         * STEP 3 — Detect intent
+         * INTENT DETECTION
          */
-        const { intent, confidence } = intentMapper.mapIntent(text);
-
-        console.log('🧠 Intent:', intent, '| Confidence:', confidence);
+        const { intent } = intentMapper.mapIntent(text);
 
         /**
-         * STEP 4 — Update session
+         * SAVE SESSION
          */
         sessionMemory.updateSession(from, {
             lastIntent: intent,
             lastQuery: text
         });
 
-        /**
-         * STEP 5 — Route logic
-         */
         let responseText;
 
         switch (intent) {
@@ -63,7 +54,11 @@ async function processIncomingMessage({ from, text }) {
                 break;
 
             case 'search':
-                responseText = await handleSearch(text);
+                responseText = await handleSearch(from, text);
+                break;
+
+            case 'order_select':
+                responseText = await handleOrderSelection(from, text);
                 break;
 
             case 'support':
@@ -74,18 +69,11 @@ async function processIncomingMessage({ from, text }) {
                 responseText = await handleFallback(text);
         }
 
-        /**
-         * STEP 6 — Send response
-         */
         return await whatsappService.sendText(from, responseText);
 
     } catch (error) {
         console.error('❌ Pipeline Error:', error.message);
-
-        return await whatsappService.sendText(
-            from,
-            'Something went wrong. Please try again later.'
-        );
+        return await whatsappService.sendText(from, 'System error.');
     }
 }
 
@@ -94,81 +82,109 @@ async function processIncomingMessage({ from, text }) {
  */
 
 function handleGreeting() {
-    return (
-        'Welcome to NDES AutoBot 🚗\n\n' +
-        'Find genuine auto parts in seconds.\n\n' +
-        '👉 Type your car + part\n' +
-        'Example: "Civic brake pads 2018"\n\n' +
-        'Or type *menu* to explore.'
-    );
+    return 'Welcome to NDES AutoBot 🚗\nType your car + part.';
 }
 
-/**
- * SALES-OPTIMIZED MENU
- */
 function handleMenu() {
+    return 'Menu:\n1. Search Parts\n2. Support';
+}
+
+/**
+ * SEARCH HANDLER
+ */
+async function handleSearch(userId, text) {
+    const processed = queryProcessor.processQuery(text);
+
+    const results = await searchService.searchProducts(
+        processed.normalizedQuery
+    );
+
+    /**
+     * 🔥 STORE RESULTS
+     */
+    sessionMemory.updateSession(userId, {
+        lastResults: results.products
+    });
+
+    const aiResponse = await responseGenerator.generateSearchResponse(results);
+
     return (
-        '🚗 *NDES AutoBot*\n\n' +
-        'What are you looking for today?\n\n' +
-        '1️⃣ Search Auto Parts\n' +
-        '2️⃣ Best Deals\n' +
-        '3️⃣ Customer Support\n\n' +
-        '💡 Example: "Civic brake pads 2018"\n\n' +
-        '⚡ Fast delivery across Pakistan'
+        aiResponse +
+        '\n\n👉 Reply with product number to order'
     );
 }
 
 /**
- * 🔥 UPGRADE 2 — GUIDED SELLING SEARCH
+ * ORDER SELECTION
  */
-async function handleSearch(text) {
-    try {
-        /**
-         * STEP 1 — Process query
-         */
-        const processed = queryProcessor.processQuery(text);
+async function handleOrderSelection(userId, text) {
+    const session = sessionMemory.getSession(userId);
 
-        /**
-         * STEP 2 — Search products
-         */
-        const searchResults = await searchService.searchProducts(
-            processed.normalizedQuery
-        );
+    const index = parseInt(text) - 1;
 
-        /**
-         * STEP 3 — Generate AI response
-         */
-        const aiResponse = await responseGenerator.generateSearchResponse(
-            searchResults
-        );
-
-        /**
-         * 🔥 SALES CTA (KEY UPGRADE)
-         */
-        return (
-            aiResponse +
-            '\n\n👉 Reply with product number to order' +
-            '\n👉 Or type *menu* for more options'
-        );
-
-    } catch (error) {
-        console.error('❌ Search Handler Error:', error.message);
-        return 'Error searching products. Please try again.';
+    if (!session.lastResults || !session.lastResults[index]) {
+        return 'Invalid selection.';
     }
+
+    const product = session.lastResults[index];
+
+    sessionMemory.updateSession(userId, {
+        order: {
+            step: 'awaiting_name',
+            product
+        }
+    });
+
+    return `Selected: ${product.name}\nEnter your name:`;
+}
+
+/**
+ * ORDER FLOW
+ */
+async function handleOrderFlow(userId, text) {
+    const session = sessionMemory.getSession(userId);
+    const order = session.order;
+
+    if (!order || !order.step) return null;
+
+    if (order.step === 'awaiting_name') {
+        sessionMemory.updateSession(userId, {
+            order: {
+                ...order,
+                step: 'awaiting_address',
+                name: text
+            }
+        });
+
+        return 'Enter your address:';
+    }
+
+    if (order.step === 'awaiting_address') {
+        sessionMemory.updateSession(userId, {
+            order: {
+                ...order,
+                step: 'confirmed',
+                address: text
+            }
+        });
+
+        return (
+            `✅ Order Confirmed\n\n` +
+            `Product: ${order.product.name}\n` +
+            `Name: ${order.name}\n` +
+            `Address: ${text}`
+        );
+    }
+
+    return null;
 }
 
 function handleSupport() {
-    return (
-        '🤝 Customer Support\n\n' +
-        'Please describe your issue.\n' +
-        'Our team will assist you shortly.'
-    );
+    return 'Support will contact you.';
 }
 
 async function handleFallback(text) {
     return await responseGenerator.generateFallbackResponse(text);
 }
 
-module.exports = {
-    processIncomingMessage
-};
+module.exports = { processIncomingMessage };
