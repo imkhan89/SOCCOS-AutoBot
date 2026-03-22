@@ -6,6 +6,7 @@
  */
 
 const whatsappService = require('../services/whatsappService');
+const intentMapper = require('../engine/semantic/intentMapper');
 
 /**
  * Main pipeline handler
@@ -15,7 +16,7 @@ async function processIncomingMessage({ from, text }) {
         console.log('📩 Incoming Message:', { from, text });
 
         /**
-         * STEP 1 — Basic validation
+         * STEP 1 — Validate input
          */
         if (!text) {
             return await whatsappService.sendText(
@@ -25,14 +26,42 @@ async function processIncomingMessage({ from, text }) {
         }
 
         /**
-         * STEP 2 — TEMPORARY RESPONSE (until intent layer is built)
+         * STEP 2 — Detect intent
          */
-        const responseText = generateTemporaryResponse(text);
+        const { intent, confidence } = intentMapper.mapIntent(text);
+
+        console.log('🧠 Intent Detected:', { intent, confidence });
 
         /**
-         * STEP 3 — Send response
+         * STEP 3 — Route based on intent
          */
-        return await whatsappService.sendText(from, responseText);
+        let response;
+
+        switch (intent) {
+            case 'greeting':
+                response = handleGreeting();
+                break;
+
+            case 'menu':
+                response = handleMenu();
+                break;
+
+            case 'search':
+                response = handleSearch(text);
+                break;
+
+            case 'support':
+                response = handleSupport();
+                break;
+
+            default:
+                response = handleFallback(text);
+        }
+
+        /**
+         * STEP 4 — Send response
+         */
+        return await whatsappService.sendText(from, response);
 
     } catch (error) {
         console.error('❌ Pipeline Error:', error.message);
@@ -45,20 +74,33 @@ async function processIncomingMessage({ from, text }) {
 }
 
 /**
- * Temporary response generator (will be replaced later)
+ * INTENT HANDLERS
  */
-function generateTemporaryResponse(text) {
-    const lower = text.toLowerCase();
 
-    if (lower.includes('hi') || lower.includes('hello')) {
-        return 'Welcome to NDES AutoBot 🚗\nHow can I help you today?';
-    }
+function handleGreeting() {
+    return 'Welcome to NDES AutoBot 🚗\nHow can I assist you today?\n\nType *menu* to explore options.';
+}
 
-    if (lower.includes('menu')) {
-        return 'Main Menu:\n1. Search Parts\n2. Browse Categories\n3. Support';
-    }
+function handleMenu() {
+    return (
+        'Main Menu:\n\n' +
+        '1. Search Auto Parts\n' +
+        '2. Browse Categories\n' +
+        '3. Customer Support\n\n' +
+        'Reply with a number or type your query.'
+    );
+}
 
-    return `You said: "${text}"\n\n(Full AI + search coming next phase 🚀)`;
+function handleSearch(text) {
+    return `🔍 Searching for: "${text}"\n\n(Search system will be connected next 🚀)`;
+}
+
+function handleSupport() {
+    return 'Our support team will assist you shortly.\nPlease describe your issue.';
+}
+
+function handleFallback(text) {
+    return `I didn’t fully understand: "${text}"\n\nType *menu* to see available options.`;
 }
 
 module.exports = {
