@@ -1,174 +1,76 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (WORKING STABLE VERSION)
+ * Core Express Server
+ * -------------------
+ * Initializes server, middleware, and routes
  */
 
-const shopifyClient = require("../../integrations/shopifyClient");
-const sessionMemory = require("../../data/memory/sessionMemory");
+const express = require("express");
+const env = require("../config/env");
 
-async function messagePipeline({ from, text }) {
-  try {
-    console.log("🔥 Pipeline triggered", { from, text });
+// Routes
+const webhookRoutes = require("../routes/webhookRoutes");
 
-    if (!from || !text) return null;
-
-    text = text.trim();
-
-    let session = sessionMemory.getSession(from) || {};
-
-    /**
-     * 🚨 HARD RULE — FORCE ORDER FLOW
-     */
-    if (
-      session.lastSelectedProduct &&
-      (!session.mode || session.mode === "search")
-    ) {
-      return {
-        type: "text",
-        message: await handleOrderFlow(from, text),
-      };
-    }
-
-    /**
-     * MENU
-     */
-    if (text.toLowerCase() === "hi") {
-      sessionMemory.updateSession(from, { mode: "menu" });
-
-      return {
-        type: "text",
-        message:
-          "👋 Welcome\n\n1. Search Products\n2. Support",
-      };
-    }
-
-    if (session.mode === "menu") {
-      if (text === "1") {
-        sessionMemory.updateSession(from, { mode: "search" });
-
-        return {
-          type: "text",
-          message: "Enter product name",
-        };
-      }
-    }
-
-    /**
-     * SEARCH
-     */
-    if (session.mode === "search" && !/^\d+$/.test(text)) {
-      const results = await shopifyClient.searchProducts(text);
-
-      const limited = results.slice(0, 5);
-
-      sessionMemory.updateSession(from, {
-        lastResults: limited,
-        mode: "search",
-      });
-
-      const msg = limited
-        .map((p, i) => `${i + 1}. ${p.title}`)
-        .join("\n");
-
-      return {
-        type: "text",
-        message: msg + "\n\nReply with number",
-      };
-    }
-
-    /**
-     * SELECTION
-     */
-    if (/^\d+$/.test(text)) {
-      const results = session.lastResults || [];
-      const product = results[parseInt(text) - 1];
-
-      if (!product) {
-        return { type: "text", message: "Invalid" };
-      }
-
-      sessionMemory.updateSession(from, {
-        lastSelectedProduct: product,
-      });
-
-      return {
-        type: "image",
-        image: product.image?.src,
-        caption: `🛒 ${product.title}\nReply 0 to continue`,
-      };
-    }
-
-    return { type: "text", message: "Try again" };
-
-  } catch (err) {
-    console.error(err);
-    return { type: "text", message: "Error" };
-  }
-}
+// Initialize app
+const app = express();
 
 /**
- * ORDER FLOW (STATELESS SAFE)
+ * GLOBAL MIDDLEWARE
  */
-async function handleOrderFlow(userId, text) {
-  let session = sessionMemory.getSession(userId) || {};
-  let order = session.order || {};
 
-  /**
-   * STEP 1
-   */
-  if (!order.name) {
-    if (text === "0") return "Enter your name:";
+// Parse JSON body (WhatsApp requires raw JSON handling)
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString();
+    },
+  })
+);
 
-    sessionMemory.updateSession(userId, {
-      order: { name: text },
-    });
+// Parse URL-encoded data
+app.use(express.urlencoded({ extended: true }));
 
-    return "Enter your address:";
-  }
+/**
+ * HEALTH CHECK (IMPORTANT FOR DEPLOYMENT)
+ */
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    status: "OK",
+    service: "SOCCOS-AutoBot",
+    timestamp: new Date().toISOString(),
+  });
+});
 
-  /**
-   * STEP 2
-   */
-  if (!order.address) {
-    sessionMemory.updateSession(userId, {
-      order: { ...order, address: text },
-    });
+/**
+ * ROUTES
+ */
+app.use("/webhook", webhookRoutes);
 
-    return "Confirm? 1 Yes / 2 No";
-  }
+/**
+ * 404 HANDLER
+ */
+app.use((req, res) => {
+  return res.status(404).json({
+    error: "Route not found",
+  });
+});
 
-  /**
-   * STEP 3
-   */
-  if (text === "1") {
-    const product = session.lastSelectedProduct;
+/**
+ * GLOBAL ERROR HANDLER
+ */
+app.use((err, req, res, next) => {
+  console.error("❌ Global Error:", err);
 
-    const orderRes = await shopifyClient.createOrder({
-      product,
-      name: order.name,
-      address: order.address,
-    });
+  return res.status(500).json({
+    error: "Internal Server Error",
+  });
+});
 
-    sessionMemory.updateSession(userId, {
-      order: null,
-      lastSelectedProduct: null,
-      mode: "menu",
-    });
+/**
+ * START SERVER
+ */
+const PORT = env.app.port;
 
-    return `✅ Order Confirmed ${orderRes.id}`;
-  }
-
-  if (text === "2") {
-    sessionMemory.updateSession(userId, {
-      order: null,
-      lastSelectedProduct: null,
-      mode: "menu",
-    });
-
-    return "Cancelled";
-  }
-
-  return "Enter name:";
-}
-
-module.exports = messagePipeline;
+app.listen(PORT, () => {
+  console.log(`🚀 SOCCOS-AutoBot running on port ${PORT}`);
+});
