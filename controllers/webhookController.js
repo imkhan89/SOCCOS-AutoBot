@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Controller (FINAL - FIXED)
+ * Webhook Controller (FINAL - DEBUG SAFE)
  */
 
 const env = require("../config/env");
@@ -35,16 +35,24 @@ exports.handleWebhook = async (req, res) => {
   try {
     const body = req.body;
 
+    console.log("📥 RAW BODY:", JSON.stringify(body, null, 2));
+
     // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
     const message =
       body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-    if (!message) return;
+    if (!message) {
+      console.log("⚠️ No message object");
+      return;
+    }
 
     const from = message.from;
-    if (!from) return;
+    if (!from) {
+      console.log("⚠️ No sender");
+      return;
+    }
 
     let text = "";
 
@@ -55,12 +63,18 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ignore unsupported messages
+      console.log("⚠️ Unsupported message type");
+      return;
     }
 
     console.log("📥 Incoming:", { from, text });
 
+    // 🔥 CRITICAL DEBUG
+    console.log("🚀 Calling pipeline...");
+
     await messagePipeline({ from, text });
+
+    console.log("✅ Pipeline execution finished");
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
