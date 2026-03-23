@@ -4,7 +4,7 @@
  */
 
 const env = require("../config/env");
-const messagePipeline = require("../orchestration/messagePipeline");
+const messagePipeline = require("../app/orchestration/messagePipeline");
 
 /**
  * GET /webhook
@@ -55,17 +55,14 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ✅ ignore unsupported messages
+      return; // ignore unsupported messages
     }
 
     console.log("📥 Incoming:", { from, text });
 
     await messagePipeline({ from, text });
 
-    return;
-
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
-    return;
   }
 };
