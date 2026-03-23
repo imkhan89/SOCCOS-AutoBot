@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (STEP 6 — MENU FLOW + SESSION CONTROL)
+ * PIPELINE (STEP 6 — FINAL FIXED)
  */
 
 const intentMapper = require("../../engine/semantic/intentMapper");
@@ -28,13 +28,18 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * STEP 2 — MODE CONTROL (PREVENT RESET)
+     * STEP 2 — MODE CONTROL (FIXED)
      */
     if (session.mode === "menu") {
       return await handleMenuFlow(from, text);
     }
 
     if (session.mode === "search") {
+      // 🔥 FIX: detect selection
+      if (!isNaN(text)) {
+        return await handleSelection(from, text);
+      }
+
       return await handleSearch(from, text);
     }
 
