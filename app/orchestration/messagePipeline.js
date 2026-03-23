@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — REVENUE + TRACKING + FIXED FLOW)
+ * PIPELINE (FINAL — FIXED FLOW + TRACKING)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -18,34 +18,14 @@ async function messagePipeline({ from, text }) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * ✅ FIX — HANDLE UPSELL STEP FIRST
+     * 🚨 CRITICAL FIX — ORDER ALWAYS HAS PRIORITY
      */
-    if (session.order && session.order.step === "awaiting_name") {
-      if (text === "0") {
-        return {
-          type: "text",
-          message: "Enter your name:",
-        };
-      }
-
-      if (text === "1" || text === "2") {
-        return {
-          type: "text",
-          message: "✅ Added to your order.\n\nEnter your name:",
-        };
-      }
+    if (session.order && session.order.step) {
+      return await handleOrderFlow(from, text);
     }
 
     /**
-     * STEP 1 — ORDER FLOW (PRIORITY)
-     */
-    const orderResponse = await handleOrderFlow(from, text);
-    if (orderResponse) {
-      return { type: "text", message: orderResponse };
-    }
-
-    /**
-     * STEP 2 — MODE CONTROL
+     * MODE CONTROL
      */
     if (session.mode === "menu") {
       return await handleMenuFlow(from, text);
@@ -220,7 +200,7 @@ async function handleSelection(userId, text) {
     `🔥 Frequently Bought:\n` +
     `1. Brake Cleaner - Rs 850\n` +
     `2. Engine Oil - Rs 4500\n\n` +
-    `Reply:\n0 → Continue\n1/2 → Add item\n\n`;
+    `Reply 0 to continue`;
 
   if (image) {
     return {
@@ -237,7 +217,7 @@ async function handleSelection(userId, text) {
 }
 
 /**
- * ORDER FLOW
+ * ORDER FLOW (FINAL FIXED)
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -245,7 +225,14 @@ async function handleOrderFlow(userId, text) {
 
   if (!order || !order.step) return null;
 
+  /**
+   * STEP 1 — UPSSELL / CONTINUE
+   */
   if (order.step === "awaiting_name") {
+    if (text === "0" || text === "1" || text === "2") {
+      return "Enter your name:";
+    }
+
     sessionMemory.updateSession(userId, {
       order: {
         ...order,
@@ -257,6 +244,9 @@ async function handleOrderFlow(userId, text) {
     return "Enter your address:";
   }
 
+  /**
+   * STEP 2 — ADDRESS
+   */
   if (order.step === "awaiting_address") {
     sessionMemory.updateSession(userId, {
       order: {
@@ -276,43 +266,15 @@ async function handleOrderFlow(userId, text) {
     );
   }
 
+  /**
+   * STEP 3 — CONFIRM
+   */
   if (order.step === "confirm_order") {
     if (text === "1") {
-      try {
-        const shopifyOrder = await shopifyClient.createOrder({
-          name: order.name,
-          address: order.address,
-          product: order.product,
-        });
-
-        sessionMemory.updateSession(userId, {
-          mode: "menu",
-          order: null,
-        });
-
-        trackEvent("order_confirmed", {
-          user: userId,
-          orderId: shopifyOrder.id,
-          product: order.product.title,
-        });
-
-        return (
-          `✅ Order Confirmed!\n\n` +
-          `🆔 Order ID: ${shopifyOrder.id}\n` +
-          `📦 Delivery: 2–4 days\n\n` +
-          `Thank you for choosing NDES 🚗`
-        );
-
-      } catch (error) {
-        console.error("Order Error:", error.message);
-        return "❌ Order failed. Try again.";
-      }
-    }
-
-    if (text === "2") {
-      trackEvent("drop_off", {
-        user: userId,
-        step: "confirm_order_cancelled",
+      const shopifyOrder = await shopifyClient.createOrder({
+        name: order.name,
+        address: order.address,
+        product: order.product,
       });
 
       sessionMemory.updateSession(userId, {
@@ -320,10 +282,26 @@ async function handleOrderFlow(userId, text) {
         order: null,
       });
 
-      return "❌ Order cancelled.\n\n1️⃣ Search\n2️⃣ Support";
+      trackEvent("order_confirmed", {
+        user: userId,
+        orderId: shopifyOrder.id,
+      });
+
+      return `✅ Order Confirmed!\nOrder ID: ${shopifyOrder.id}`;
     }
 
-    return "Reply 1 to Confirm or 2 to Cancel";
+    if (text === "2") {
+      trackEvent("drop_off", { user: userId });
+
+      sessionMemory.updateSession(userId, {
+        mode: "menu",
+        order: null,
+      });
+
+      return "❌ Order cancelled.";
+    }
+
+    return "Reply 1 to confirm or 2 to cancel";
   }
 
   return null;
