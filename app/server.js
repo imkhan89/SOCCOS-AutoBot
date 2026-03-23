@@ -5,11 +5,11 @@
  * Initializes server, middleware, and routes
  */
 
-const express = require('express');
-const env = require('../config/env');
+const express = require("express");
+const env = require("../config/env");
 
 // Routes
-const webhookRoutes = require('../routes/webhookRoutes');
+const webhookRoutes = require("../routes/webhookRoutes");
 
 // Initialize app
 const app = express();
@@ -19,11 +19,13 @@ const app = express();
  */
 
 // Parse JSON body (WhatsApp requires raw JSON handling)
-app.use(express.json({
+app.use(
+  express.json({
     verify: (req, res, buf) => {
-        req.rawBody = buf.toString();
-    }
-}));
+      req.rawBody = buf.toString();
+    },
+  })
+);
 
 // Parse URL-encoded data
 app.use(express.urlencoded({ extended: true }));
@@ -31,37 +33,37 @@ app.use(express.urlencoded({ extended: true }));
 /**
  * HEALTH CHECK (IMPORTANT FOR DEPLOYMENT)
  */
-app.get('/health', (req, res) => {
-    return res.status(200).json({
-        status: 'OK',
-        service: 'SOCCOS-AutoBot',
-        timestamp: new Date().toISOString()
-    });
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    status: "OK",
+    service: "SOCCOS-AutoBot",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 /**
  * ROUTES
  */
-app.use('/webhook', webhookRoutes);
+app.use("/webhook", webhookRoutes);
 
 /**
  * 404 HANDLER
  */
 app.use((req, res) => {
-    return res.status(404).json({
-        error: 'Route not found'
-    });
+  return res.status(404).json({
+    error: "Route not found",
+  });
 });
 
 /**
  * GLOBAL ERROR HANDLER
  */
 app.use((err, req, res, next) => {
-    console.error('❌ Global Error:', err);
+  console.error("❌ Global Error:", err);
 
-    return res.status(500).json({
-        error: 'Internal Server Error'
-    });
+  return res.status(500).json({
+    error: "Internal Server Error",
+  });
 });
 
 /**
@@ -70,5 +72,5 @@ app.use((err, req, res, next) => {
 const PORT = env.app.port;
 
 app.listen(PORT, () => {
-    console.log(`🚀 SOCCOS-AutoBot running on port ${PORT}`);
+  console.log(`🚀 SOCCOS-AutoBot running on port ${PORT}`);
 });
