@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — FIXED FLOW + TRACKING)
+ * PIPELINE (FINAL — HARD FIX STATE + FLOW)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -15,22 +15,38 @@ async function messagePipeline({ from, text }) {
 
     text = text.trim().toLowerCase();
 
-    const session = sessionMemory.getSession(from) || {};
+    let session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🚨 CRITICAL FIX — ORDER ALWAYS HAS PRIORITY
+     * 🚨 HARD FIX — FORCE ORDER CONTEXT
      */
-    if (session.order && session.order.step) {
-      return await handleOrderFlow(from, text);
+    if (!session.order && session.lastSelectedProduct) {
+      session.order = {
+        step: "awaiting_name",
+        product: session.lastSelectedProduct,
+      };
     }
 
     /**
-     * MODE CONTROL
+     * 🚨 PRIORITY — ORDER FLOW
+     */
+    if (session.order && session.order.step) {
+      return {
+        type: "text",
+        message: await handleOrderFlow(from, text),
+      };
+    }
+
+    /**
+     * MENU
      */
     if (session.mode === "menu") {
       return await handleMenuFlow(from, text);
     }
 
+    /**
+     * SEARCH / SELECTION
+     */
     if (session.mode === "search") {
       if (/^\d+$/.test(text)) {
         return await handleSelection(from, text);
@@ -38,17 +54,20 @@ async function messagePipeline({ from, text }) {
       return await handleSearch(from, text);
     }
 
+    /**
+     * SUPPORT
+     */
     if (session.mode === "support") {
       return {
         type: "text",
-        message: "Support request received. Our team will contact you.",
+        message: "Support request received.",
       };
     }
 
     /**
      * DEFAULT ENTRY
      */
-    if (text === "hi" || text === "hello" || text === "start") {
+    if (["hi", "hello", "start"].includes(text)) {
       sessionMemory.updateSession(from, { mode: "menu" });
 
       trackEvent("conversation_started", { user: from });
@@ -58,8 +77,7 @@ async function messagePipeline({ from, text }) {
         message:
           "👋 Welcome to NDES AutoBot!\n\n" +
           "1️⃣ Search Products\n" +
-          "2️⃣ Support\n\n" +
-          "Reply with option number",
+          "2️⃣ Support\n\nReply with option number",
       };
     }
 
@@ -68,240 +86,135 @@ async function messagePipeline({ from, text }) {
 
   } catch (error) {
     console.error("❌ Pipeline Error:", error.message);
-
-    return {
-      type: "text",
-      message: "System error. Please try again.",
-    };
+    return { type: "text", message: "System error." };
   }
 }
 
 /**
- * MENU FLOW
+ * MENU
  */
 async function handleMenuFlow(userId, text) {
   if (text === "1") {
     sessionMemory.updateSession(userId, { mode: "search" });
-
-    return {
-      type: "text",
-      message: "🔍 Enter product name (e.g., brake pads)",
-    };
+    return { type: "text", message: "🔍 Enter product name" };
   }
 
   if (text === "2") {
     sessionMemory.updateSession(userId, { mode: "support" });
-
-    return {
-      type: "text",
-      message: "🤝 Please describe your issue.",
-    };
+    return { type: "text", message: "Describe your issue" };
   }
 
-  return {
-    type: "text",
-    message: "Invalid option.\n\n1️⃣ Search Products\n2️⃣ Support",
-  };
+  return { type: "text", message: "Invalid option" };
 }
 
 /**
  * SEARCH
  */
 async function handleSearch(userId, text) {
-  try {
-    const results = await shopifyClient.searchProducts(text);
+  const results = await shopifyClient.searchProducts(text);
 
-    if (!results || !results.length) {
-      return {
-        type: "text",
-        message: "❌ No products found.",
-      };
-    }
-
-    const limitedResults = results.slice(0, 5);
-
-    sessionMemory.updateSession(userId, {
-      mode: "search",
-      lastResults: limitedResults,
-    });
-
-    trackEvent("search", {
-      user: userId,
-      query: text,
-      results: limitedResults.length,
-    });
-
-    const message = limitedResults
-      .map((p, i) => {
-        const price = p.variants?.[0]?.price || "";
-        return `${i + 1}. ${p.title} - Rs ${price}`;
-      })
-      .join("\n");
-
-    return {
-      type: "text",
-      message:
-        `🔎 Top Products:\n\n${message}\n\nReply with number.`,
-    };
-
-  } catch (error) {
-    console.error("Search Error:", error.message);
-
-    return {
-      type: "text",
-      message: "Search error. Try again.",
-    };
+  if (!results?.length) {
+    return { type: "text", message: "No products found" };
   }
+
+  const limited = results.slice(0, 5);
+
+  sessionMemory.updateSession(userId, {
+    mode: "search",
+    lastResults: limited,
+  });
+
+  trackEvent("search", { user: userId, query: text });
+
+  const msg = limited
+    .map((p, i) => `${i + 1}. ${p.title} - Rs ${p.variants?.[0]?.price}`)
+    .join("\n");
+
+  return {
+    type: "text",
+    message: `🔎 Products:\n\n${msg}\n\nReply with number`,
+  };
 }
 
 /**
- * SELECTION
+ * SELECTION (CRITICAL FIX)
  */
 async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const results = session.lastResults || [];
 
-  const index = parseInt(text.trim(), 10) - 1;
+  const index = parseInt(text) - 1;
 
   if (!results[index]) {
-    return {
-      type: "text",
-      message: "❌ Invalid selection.",
-    };
+    return { type: "text", message: "Invalid selection" };
   }
 
   const product = results[index];
-  const price = product.variants?.[0]?.price || "";
 
-  trackEvent("product_selected", {
-    user: userId,
-    product: product.title,
-    price,
-  });
-
-  trackEvent("order_started", {
-    user: userId,
-    product: product.title,
-  });
-
+  /**
+   * 🚨 SAVE HARD STATE
+   */
   sessionMemory.updateSession(userId, {
+    lastSelectedProduct: product, // 🔥 NEW
     order: {
       step: "awaiting_name",
       product,
     },
   });
 
-  const image =
-    product.image?.src || product.images?.[0]?.src || null;
-
-  const caption =
-    `🛒 ${product.title}\n` +
-    `💰 Rs ${price}\n\n` +
-    `🔥 Frequently Bought:\n` +
-    `1. Brake Cleaner - Rs 850\n` +
-    `2. Engine Oil - Rs 4500\n\n` +
-    `Reply 0 to continue`;
-
-  if (image) {
-    return {
-      type: "image",
-      image,
-      caption,
-    };
-  }
+  trackEvent("product_selected", { user: userId });
 
   return {
-    type: "text",
-    message: caption,
+    type: "image",
+    image: product.image?.src || product.images?.[0]?.src,
+    caption:
+      `🛒 ${product.title}\n` +
+      `Reply 0 to continue`,
   };
 }
 
 /**
- * ORDER FLOW (FINAL FIXED)
+ * ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
-  const session = sessionMemory.getSession(userId) || {};
-  const order = session.order;
+  let session = sessionMemory.getSession(userId) || {};
+  let order = session.order;
 
-  if (!order || !order.step) return null;
+  if (!order) return null;
 
-  /**
-   * STEP 1 — UPSSELL / CONTINUE
-   */
   if (order.step === "awaiting_name") {
-    if (text === "0" || text === "1" || text === "2") {
+    if (["0", "1", "2"].includes(text)) {
       return "Enter your name:";
     }
 
     sessionMemory.updateSession(userId, {
-      order: {
-        ...order,
-        step: "awaiting_address",
-        name: text,
-      },
+      order: { ...order, step: "awaiting_address", name: text },
     });
 
     return "Enter your address:";
   }
 
-  /**
-   * STEP 2 — ADDRESS
-   */
   if (order.step === "awaiting_address") {
     sessionMemory.updateSession(userId, {
-      order: {
-        ...order,
-        step: "confirm_order",
-        address: text,
-      },
+      order: { ...order, step: "confirm_order", address: text },
     });
 
-    return (
-      `Please confirm your order:\n\n` +
-      `Product: ${order.product.title}\n` +
-      `Price: Rs ${order.product.variants?.[0]?.price}\n` +
-      `Name: ${order.name}\n` +
-      `Address: ${text}\n\n` +
-      `Reply:\n1 → Confirm\n2 → Cancel`
-    );
+    return "Confirm order? 1 Yes / 2 No";
   }
 
-  /**
-   * STEP 3 — CONFIRM
-   */
   if (order.step === "confirm_order") {
     if (text === "1") {
-      const shopifyOrder = await shopifyClient.createOrder({
-        name: order.name,
-        address: order.address,
-        product: order.product,
-      });
+      const orderRes = await shopifyClient.createOrder(order);
 
-      sessionMemory.updateSession(userId, {
-        mode: "menu",
-        order: null,
-      });
+      sessionMemory.updateSession(userId, { order: null, mode: "menu" });
 
-      trackEvent("order_confirmed", {
-        user: userId,
-        orderId: shopifyOrder.id,
-      });
-
-      return `✅ Order Confirmed!\nOrder ID: ${shopifyOrder.id}`;
+      return `✅ Order Confirmed ID: ${orderRes.id}`;
     }
 
     if (text === "2") {
-      trackEvent("drop_off", { user: userId });
-
-      sessionMemory.updateSession(userId, {
-        mode: "menu",
-        order: null,
-      });
-
-      return "❌ Order cancelled.";
+      sessionMemory.updateSession(userId, { order: null, mode: "menu" });
+      return "Order cancelled";
     }
-
-    return "Reply 1 to confirm or 2 to cancel";
   }
 
   return null;
