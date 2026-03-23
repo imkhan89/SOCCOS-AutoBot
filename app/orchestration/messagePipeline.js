@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (INTERFACE-SEPARATED - STEP 5)
+ * PIPELINE (STEP 6 — MENU FLOW + SESSION CONTROL)
  */
 
 const intentMapper = require("../../engine/semantic/intentMapper");
@@ -16,24 +16,8 @@ async function messagePipeline({ from, text }) {
 
     const session = sessionMemory.getSession(from) || {};
 
-// FLOW MODE CONTROL
-if (session.mode === "menu") {
-  return await handleMenuFlow(from, text);
-}
-
-if (session.mode === "search") {
-  return await handleSearch(from, text);
-}
-
-if (session.mode === "support") {
-  return {
-    type: "text",
-    message: "Support request received. Our team will contact you.",
-  };
-}
-
     /**
-     * STEP 1 — ORDER FLOW
+     * STEP 1 — ORDER FLOW (PRIORITY)
      */
     const orderResponse = await handleOrderFlow(from, text);
     if (orderResponse) {
@@ -44,31 +28,41 @@ if (session.mode === "support") {
     }
 
     /**
-     * STEP 2 — INTENT
+     * STEP 2 — MODE CONTROL (PREVENT RESET)
+     */
+    if (session.mode === "menu") {
+      return await handleMenuFlow(from, text);
+    }
+
+    if (session.mode === "search") {
+      return await handleSearch(from, text);
+    }
+
+    if (session.mode === "support") {
+      return {
+        type: "text",
+        message: "Support request received. Our team will contact you.",
+      };
+    }
+
+    /**
+     * STEP 3 — INTENT
      */
     const intent = intentMapper(text);
 
     /**
-     * STEP 3 — ROUTING
+     * STEP 4 — ROUTING
      */
     if (intent === "greeting") {
-      return {
-        type: "text",
-        message: "👋 Welcome to NDES AutoBot!\nType product name to search.",
-      };
-    }
+      sessionMemory.updateSession(from, { mode: "menu" });
 
-    if (intent === "menu") {
       return {
         type: "text",
-        message: "📋 Menu:\n1. Search products\n2. Support",
-      };
-    }
-
-    if (intent === "support") {
-      return {
-        type: "text",
-        message: "🤝 Please describe your issue. Our team will assist.",
+        message:
+          "👋 Welcome to NDES AutoBot!\n\n" +
+          "1️⃣ Search Products\n" +
+          "2️⃣ Support\n\n" +
+          "Reply with option number",
       };
     }
 
@@ -77,6 +71,7 @@ if (session.mode === "support") {
     }
 
     if (intent === "search") {
+      sessionMemory.updateSession(from, { mode: "search" });
       return await handleSearch(from, text);
     }
 
@@ -85,7 +80,9 @@ if (session.mode === "support") {
      */
     return {
       type: "text",
-      message: "Type product name (e.g., Civic brake pads)",
+      message:
+        "Type 1 for Search or 2 for Support\n\n" +
+        "Or type product name directly.",
     };
 
   } catch (error) {
@@ -96,6 +93,37 @@ if (session.mode === "support") {
       message: "System error. Please try again.",
     };
   }
+}
+
+/**
+ * MENU FLOW
+ */
+async function handleMenuFlow(userId, text) {
+  if (text === "1") {
+    sessionMemory.updateSession(userId, { mode: "search" });
+
+    return {
+      type: "text",
+      message: "🔍 Enter product name (e.g., Civic brake pads)",
+    };
+  }
+
+  if (text === "2") {
+    sessionMemory.updateSession(userId, { mode: "support" });
+
+    return {
+      type: "text",
+      message: "🤝 Please describe your issue.",
+    };
+  }
+
+  return {
+    type: "text",
+    message:
+      "Invalid option.\n\n" +
+      "1️⃣ Search Products\n" +
+      "2️⃣ Support",
+  };
 }
 
 /**
@@ -122,6 +150,7 @@ async function handleSearch(userId, text) {
     }
 
     sessionMemory.updateSession(userId, {
+      mode: "search",
       lastResults: results,
     });
 
@@ -135,7 +164,8 @@ async function handleSearch(userId, text) {
 
     return {
       type: "text",
-      message: `Available Products:\n\n${message}\n\nReply with number to select.`,
+      message:
+        `Available Products:\n\n${message}\n\nReply with number to select.`,
     };
 
   } catch (error) {
