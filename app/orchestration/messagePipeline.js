@@ -14,6 +14,24 @@ async function messagePipeline({ from, text }) {
 
     if (!from || !text) return null;
 
+    const session = sessionMemory.getSession(from) || {};
+
+// FLOW MODE CONTROL
+if (session.mode === "menu") {
+  return await handleMenuFlow(from, text);
+}
+
+if (session.mode === "search") {
+  return await handleSearch(from, text);
+}
+
+if (session.mode === "support") {
+  return {
+    type: "text",
+    message: "Support request received. Our team will contact you.",
+  };
+}
+
     /**
      * STEP 1 — ORDER FLOW
      */
