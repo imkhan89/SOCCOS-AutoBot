@@ -1,26 +1,28 @@
 /**
  * SOCCOS-AutoBot
- * PRODUCTION PIPELINE (CORRECTED)
+ * PIPELINE (INTERFACE-SEPARATED - STEP 5)
  */
 
 const intentMapper = require("../../engine/semantic/intentMapper");
 const queryProcessor = require("../../engine/processors/queryProcessor");
 const { searchProducts } = require("../search/searchService");
-const whatsappService = require("../../services/whatsappService");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
 async function messagePipeline({ from, text }) {
   try {
     console.log("🔥 Pipeline triggered", { from, text });
 
-    if (!from || !text) return;
+    if (!from || !text) return null;
 
     /**
      * STEP 1 — ORDER FLOW
      */
     const orderResponse = await handleOrderFlow(from, text);
     if (orderResponse) {
-      return await whatsappService.sendText(from, orderResponse);
+      return {
+        type: "text",
+        message: orderResponse,
+      };
     }
 
     /**
@@ -32,24 +34,24 @@ async function messagePipeline({ from, text }) {
      * STEP 3 — ROUTING
      */
     if (intent === "greeting") {
-      return await whatsappService.sendText(
-        from,
-        "👋 Welcome to NDES AutoBot!\nType product name to search."
-      );
+      return {
+        type: "text",
+        message: "👋 Welcome to NDES AutoBot!\nType product name to search.",
+      };
     }
 
     if (intent === "menu") {
-      return await whatsappService.sendText(
-        from,
-        "📋 Menu:\n1. Search products\n2. Support"
-      );
+      return {
+        type: "text",
+        message: "📋 Menu:\n1. Search products\n2. Support",
+      };
     }
 
     if (intent === "support") {
-      return await whatsappService.sendText(
-        from,
-        "🤝 Please describe your issue. Our team will assist."
-      );
+      return {
+        type: "text",
+        message: "🤝 Please describe your issue. Our team will assist.",
+      };
     }
 
     if (intent === "order_select") {
@@ -63,18 +65,18 @@ async function messagePipeline({ from, text }) {
     /**
      * DEFAULT
      */
-    return await whatsappService.sendText(
-      from,
-      "Type product name (e.g., Civic brake pads)"
-    );
+    return {
+      type: "text",
+      message: "Type product name (e.g., Civic brake pads)",
+    };
 
   } catch (error) {
     console.error("❌ Pipeline Error:", error.message);
 
-    return await whatsappService.sendText(
-      from,
-      "System error. Please try again."
-    );
+    return {
+      type: "text",
+      message: "System error. Please try again.",
+    };
   }
 }
 
@@ -86,19 +88,19 @@ async function handleSearch(userId, text) {
     const query = queryProcessor(text);
 
     if (!query) {
-      return await whatsappService.sendText(
-        userId,
-        "Please enter a valid product name."
-      );
+      return {
+        type: "text",
+        message: "Please enter a valid product name.",
+      };
     }
 
     const results = await searchProducts(query);
 
     if (!results || results.length === 0) {
-      return await whatsappService.sendText(
-        userId,
-        "No products found."
-      );
+      return {
+        type: "text",
+        message: "No products found.",
+      };
     }
 
     sessionMemory.updateSession(userId, {
@@ -113,18 +115,18 @@ async function handleSearch(userId, text) {
       })
       .join("\n");
 
-    return await whatsappService.sendText(
-      userId,
-      `Available Products:\n\n${message}\n\nReply with number to select.`
-    );
+    return {
+      type: "text",
+      message: `Available Products:\n\n${message}\n\nReply with number to select.`,
+    };
 
   } catch (error) {
     console.error("Search Error:", error.message);
 
-    return await whatsappService.sendText(
-      userId,
-      "Search error. Try again."
-    );
+    return {
+      type: "text",
+      message: "Search error. Try again.",
+    };
   }
 }
 
@@ -138,7 +140,10 @@ async function handleSelection(userId, text) {
   const index = parseInt(text, 10) - 1;
 
   if (isNaN(index) || !results[index]) {
-    return await whatsappService.sendText(userId, "Invalid selection.");
+    return {
+      type: "text",
+      message: "Invalid selection.",
+    };
   }
 
   const product = results[index];
@@ -150,10 +155,10 @@ async function handleSelection(userId, text) {
     },
   });
 
-  return await whatsappService.sendText(
-    userId,
-    `Selected: ${product.title || product.name}\nEnter your name:`
-  );
+  return {
+    type: "text",
+    message: `Selected: ${product.title || product.name}\nEnter your name:`,
+  };
 }
 
 /**
