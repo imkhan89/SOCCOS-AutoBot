@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Controller (INTERFACE SEPARATED - FINAL)
+ * Webhook Controller (FINAL — CLEAN + HARDENED)
  */
 
 const env = require("../config/env");
@@ -8,7 +8,7 @@ const messagePipeline = require("../app/orchestration/messagePipeline");
 const whatsappService = require("../services/whatsappService");
 
 /**
- * GET /webhook
+ * GET /webhook (Verification)
  */
 exports.verifyWebhook = (req, res) => {
   try {
@@ -30,22 +30,21 @@ exports.verifyWebhook = (req, res) => {
 };
 
 /**
- * POST /webhook
+ * POST /webhook (Main Handler)
  */
 exports.handleWebhook = async (req, res) => {
   try {
     const body = req.body;
 
-    console.log("📥 RAW BODY:", JSON.stringify(body, null, 2));
-
-    // ✅ Acknowledge immediately
+    // ✅ Always acknowledge immediately (critical for WhatsApp)
     res.sendStatus(200);
 
+    // 🔍 Extract message safely
     const message =
       body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
     if (!message) {
-      console.log("⚠️ No message object");
+      console.log("⚠️ No message object (status update or delivery event)");
       return;
     }
 
@@ -57,6 +56,7 @@ exports.handleWebhook = async (req, res) => {
 
     let text = "";
 
+    // ✅ Handle all supported message types
     if (message.text?.body) {
       text = message.text.body;
     } else if (message.button?.text) {
@@ -68,20 +68,28 @@ exports.handleWebhook = async (req, res) => {
       return;
     }
 
+    text = text.trim();
+
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * 🔥 PIPELINE RETURNS RESPONSE
+     * 🔥 PIPELINE (CORE BRAIN)
      */
     const response = await messagePipeline({ from, text });
 
     console.log("📤 Pipeline response:", response);
 
     /**
-     * ✅ INTERFACE SENDS MESSAGE
+     * ✅ SEND RESPONSE
      */
-    if (response && response.type === "text") {
+    if (!response) return;
+
+    if (response.type === "text") {
       await whatsappService.sendText(from, response.message);
+    }
+
+    if (response.type === "image") {
+      await whatsappService.sendImage(from, response.image, response.caption);
     }
 
   } catch (error) {
