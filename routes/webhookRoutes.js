@@ -1,28 +1,23 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Routes
- * ----------------
- * Handles:
- * - Meta verification (GET)
- * - Incoming messages (POST)
+ * Webhook Routes (FINAL — CLEAN)
  */
 
-const express = require('express');
+const express = require("express");
 const router = express.Router();
 
-// Controller (will be created next)
-const webhookController = require('../controllers/webhookController');
+const webhookController = require("../controllers/webhookController");
 
 /**
  * GET /webhook
- * Meta verification endpoint
+ * Meta verification
  */
-router.get('/', webhookController.verifyWebhook);
+router.get("/", webhookController.verifyWebhook);
 
 /**
  * POST /webhook
- * Incoming messages from WhatsApp
+ * Incoming WhatsApp messages
  */
-router.post('/', webhookController.handleWebhook);
+router.post("/", webhookController.handleWebhook);
 
 module.exports = router;
