@@ -1,10 +1,11 @@
 /**
  * SOCCOS-AutoBot
- * Webhook Controller (FINAL - DEBUG SAFE)
+ * Webhook Controller (INTERFACE SEPARATED - FINAL)
  */
 
 const env = require("../config/env");
 const messagePipeline = require("../app/orchestration/messagePipeline");
+const whatsappService = require("../services/whatsappService");
 
 /**
  * GET /webhook
@@ -37,7 +38,7 @@ exports.handleWebhook = async (req, res) => {
 
     console.log("📥 RAW BODY:", JSON.stringify(body, null, 2));
 
-    // ✅ Always acknowledge immediately
+    // ✅ Acknowledge immediately
     res.sendStatus(200);
 
     const message =
@@ -69,12 +70,19 @@ exports.handleWebhook = async (req, res) => {
 
     console.log("📥 Incoming:", { from, text });
 
-    // 🔥 CRITICAL DEBUG
-    console.log("🚀 Calling pipeline...");
+    /**
+     * 🔥 PIPELINE RETURNS RESPONSE
+     */
+    const response = await messagePipeline({ from, text });
 
-    await messagePipeline({ from, text });
+    console.log("📤 Pipeline response:", response);
 
-    console.log("✅ Pipeline execution finished");
+    /**
+     * ✅ INTERFACE SENDS MESSAGE
+     */
+    if (response && response.type === "text") {
+      await whatsappService.sendText(from, response.message);
+    }
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
