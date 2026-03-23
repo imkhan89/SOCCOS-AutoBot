@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (FINAL — FIXED SEARCH + ORDER)
+ * Shopify Client (FINAL — PRODUCTION READY)
  */
 
 const axios = require("axios");
@@ -14,7 +14,7 @@ const headers = {
 };
 
 /**
- * 🔍 SEARCH PRODUCTS (FIXED — FLEXIBLE MATCH)
+ * 🔍 SEARCH PRODUCTS (FINAL FIXED)
  */
 async function searchProducts(query) {
   try {
@@ -25,21 +25,32 @@ async function searchProducts(query) {
 
     const response = await axios.get(`${BASE_URL}/products.json`, {
       headers,
-      params: { limit: 50 }, // increased pool
+      params: { limit: 50 },
     });
 
     const products = response.data.products || [];
 
+    console.log("🧾 Total Shopify Products:", products.length);
+
     if (!query) return products;
 
-    const keywords = query.toLowerCase().split(" ");
+    // ✅ CLEAN QUERY
+    const keywords = query
+      .toLowerCase()
+      .trim()
+      .split(" ")
+      .filter(Boolean); // removes empty values
 
-    return products.filter((p) => {
-      const title = p.title.toLowerCase();
+    const filtered = products.filter((p) => {
+      const title = (p.title || "").toLowerCase();
 
-      // ✅ match ANY keyword (not strict full string)
       return keywords.some((word) => title.includes(word));
     });
+
+    console.log("🔍 Search Query:", query);
+    console.log("✅ Matched Products:", filtered.length);
+
+    return filtered;
 
   } catch (error) {
     console.error("❌ Shopify Search Error:", error.message);
@@ -48,7 +59,7 @@ async function searchProducts(query) {
 }
 
 /**
- * 🛒 CREATE ORDER (STABLE)
+ * 🛒 CREATE ORDER (FINAL SAFE)
  */
 async function createOrder(orderData, retries = 2) {
   try {
@@ -57,13 +68,18 @@ async function createOrder(orderData, retries = 2) {
       return null;
     }
 
-    const url = `${BASE_URL}/orders.json`;
+    const variantId = orderData?.product?.variants?.[0]?.id;
+
+    if (!variantId) {
+      console.error("❌ Missing variant ID");
+      return null;
+    }
 
     const payload = {
       order: {
         line_items: [
           {
-            variant_id: orderData.product?.variants?.[0]?.id,
+            variant_id: variantId,
             quantity: 1,
           },
         ],
@@ -78,7 +94,11 @@ async function createOrder(orderData, retries = 2) {
       },
     };
 
-    const response = await axios.post(url, payload, { headers });
+    const response = await axios.post(
+      `${BASE_URL}/orders.json`,
+      payload,
+      { headers }
+    );
 
     return response.data.order;
 
