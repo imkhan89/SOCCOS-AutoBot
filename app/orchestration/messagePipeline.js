@@ -1,10 +1,11 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — REVENUE OPTIMIZED)
+ * PIPELINE (FINAL — REVENUE + TRACKING)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
+const { trackEvent } = require("../../utils/tracker"); // ✅ ADDED
 
 async function messagePipeline({ from, text }) {
   try {
@@ -46,10 +47,13 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * DEFAULT ENTRY
+     * DEFAULT ENTRY (CONVERSATION START)
      */
     if (text === "hi" || text === "hello" || text === "start") {
       sessionMemory.updateSession(from, { mode: "menu" });
+
+      // ✅ TRACK
+      trackEvent("conversation_started", { user: from });
 
       return {
         type: "text",
@@ -80,7 +84,6 @@ async function messagePipeline({ from, text }) {
 async function handleMenuFlow(userId, text) {
   if (text === "1") {
     sessionMemory.updateSession(userId, { mode: "search" });
-
     return {
       type: "text",
       message: "🔍 Enter product name (e.g., brake pads)",
@@ -89,7 +92,6 @@ async function handleMenuFlow(userId, text) {
 
   if (text === "2") {
     sessionMemory.updateSession(userId, { mode: "support" });
-
     return {
       type: "text",
       message: "🤝 Please describe your issue.",
@@ -103,7 +105,7 @@ async function handleMenuFlow(userId, text) {
 }
 
 /**
- * 🔍 SEARCH (LIMITED RESULTS)
+ * 🔍 SEARCH (TRACKED)
  */
 async function handleSearch(userId, text) {
   try {
@@ -116,12 +118,18 @@ async function handleSearch(userId, text) {
       };
     }
 
-    // ✅ LIMIT RESULTS (CRITICAL FIX)
     const limitedResults = results.slice(0, 5);
 
     sessionMemory.updateSession(userId, {
       mode: "search",
       lastResults: limitedResults,
+    });
+
+    // ✅ TRACK SEARCH
+    trackEvent("search", {
+      user: userId,
+      query: text,
+      results: limitedResults.length,
     });
 
     const message = limitedResults
@@ -133,13 +141,11 @@ async function handleSearch(userId, text) {
 
     return {
       type: "text",
-      message:
-        `🔎 Top Products:\n\n${message}\n\nReply with number.`,
+      message: `🔎 Top Products:\n\n${message}\n\nReply with number.`,
     };
 
   } catch (error) {
     console.error("Search Error:", error.message);
-
     return {
       type: "text",
       message: "Search error. Try again.",
@@ -148,7 +154,7 @@ async function handleSearch(userId, text) {
 }
 
 /**
- * SELECT PRODUCT (IMAGE + UPSELL)
+ * SELECT PRODUCT (TRACKED)
  */
 async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -165,6 +171,19 @@ async function handleSelection(userId, text) {
 
   const product = results[index];
   const price = product.variants?.[0]?.price || "";
+
+  // ✅ TRACK PRODUCT SELECTED
+  trackEvent("product_selected", {
+    user: userId,
+    product: product.title,
+    price,
+  });
+
+  // ✅ TRACK ORDER STARTED
+  trackEvent("order_started", {
+    user: userId,
+    product: product.title,
+  });
 
   sessionMemory.updateSession(userId, {
     order: {
@@ -200,7 +219,7 @@ async function handleSelection(userId, text) {
 }
 
 /**
- * 🛒 ORDER FLOW (COD CONFIRMATION)
+ * 🛒 ORDER FLOW (TRACKED)
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -257,6 +276,13 @@ async function handleOrderFlow(userId, text) {
           return "❌ Order failed. Try again.";
         }
 
+        // ✅ TRACK ORDER CONFIRMED
+        trackEvent("order_confirmed", {
+          user: userId,
+          orderId: shopifyOrder.id,
+          product: order.product.title,
+        });
+
         return (
           `✅ Order Confirmed!\n\n` +
           `🆔 Order ID: ${shopifyOrder.id}\n` +
@@ -272,6 +298,12 @@ async function handleOrderFlow(userId, text) {
     }
 
     if (text === "2") {
+      // ✅ TRACK DROP-OFF (CANCEL)
+      trackEvent("drop_off", {
+        user: userId,
+        step: "confirm_order_cancelled",
+      });
+
       sessionMemory.updateSession(userId, {
         mode: "menu",
         order: null,
