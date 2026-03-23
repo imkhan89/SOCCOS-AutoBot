@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (STEP 7 — SHOPIFY CONNECTED)
+ * PIPELINE (FINAL — CLEAN + STABLE)
  */
 
 const intentMapper = require("../../engine/semantic/intentMapper");
@@ -13,6 +13,8 @@ async function messagePipeline({ from, text }) {
     console.log("🔥 Pipeline triggered", { from, text });
 
     if (!from || !text) return null;
+
+    text = text.trim(); // ✅ FIX: sanitize input
 
     const session = sessionMemory.getSession(from) || {};
 
@@ -35,7 +37,8 @@ async function messagePipeline({ from, text }) {
     }
 
     if (session.mode === "search") {
-      if (!isNaN(text)) {
+      // ✅ FIX: robust number detection
+      if (/^\d+$/.test(text)) {
         return await handleSelection(from, text);
       }
 
@@ -119,7 +122,7 @@ async function handleMenuFlow(userId, text) {
 }
 
 /**
- * 🔍 SEARCH (SHOPIFY)
+ * 🔍 SEARCH
  */
 async function handleSearch(userId, text) {
   try {
@@ -169,7 +172,7 @@ async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const results = session.lastResults || [];
 
-  const index = parseInt(text) - 1;
+  const index = parseInt(text, 10) - 1;
 
   if (!results[index]) {
     return {
@@ -197,7 +200,7 @@ async function handleSelection(userId, text) {
 }
 
 /**
- * 🛒 ORDER FLOW (NOW REAL SHOPIFY)
+ * 🛒 ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -224,15 +227,19 @@ async function handleOrderFlow(userId, text) {
       product: order.product,
     });
 
-    sessionMemory.clearSession(userId);
+    // ✅ FIX: return to menu after order
+    sessionMemory.updateSession(userId, { mode: "menu" });
 
     if (!shopifyOrder) {
       return "❌ Order failed. Try again.";
     }
 
-    return `✅ Order Confirmed!
-Order ID: ${shopifyOrder.id}
-Product: ${order.product.title}`;
+    return (
+      `✅ Order Confirmed!\n` +
+      `Order ID: ${shopifyOrder.id}\n` +
+      `Product: ${order.product.title}\n\n` +
+      `\n1️⃣ Search Products\n2️⃣ Support`
+    );
   }
 
   return null;
