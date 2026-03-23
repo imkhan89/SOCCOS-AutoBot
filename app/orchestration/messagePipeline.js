@@ -1,11 +1,11 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — REVENUE + TRACKING)
+ * PIPELINE (FINAL — REVENUE + TRACKING + FIXED FLOW)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
-const { trackEvent } = require("../../utils/tracker"); // ✅ ADDED
+const { trackEvent } = require("../../utils/tracker");
 
 async function messagePipeline({ from, text }) {
   try {
@@ -16,6 +16,25 @@ async function messagePipeline({ from, text }) {
     text = text.trim().toLowerCase();
 
     const session = sessionMemory.getSession(from) || {};
+
+    /**
+     * ✅ FIX — HANDLE UPSELL STEP FIRST
+     */
+    if (session.order && session.order.step === "awaiting_name") {
+      if (text === "0") {
+        return {
+          type: "text",
+          message: "Enter your name:",
+        };
+      }
+
+      if (text === "1" || text === "2") {
+        return {
+          type: "text",
+          message: "✅ Added to your order.\n\nEnter your name:",
+        };
+      }
+    }
 
     /**
      * STEP 1 — ORDER FLOW (PRIORITY)
@@ -47,12 +66,11 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * DEFAULT ENTRY (CONVERSATION START)
+     * DEFAULT ENTRY
      */
     if (text === "hi" || text === "hello" || text === "start") {
       sessionMemory.updateSession(from, { mode: "menu" });
 
-      // ✅ TRACK
       trackEvent("conversation_started", { user: from });
 
       return {
@@ -84,6 +102,7 @@ async function messagePipeline({ from, text }) {
 async function handleMenuFlow(userId, text) {
   if (text === "1") {
     sessionMemory.updateSession(userId, { mode: "search" });
+
     return {
       type: "text",
       message: "🔍 Enter product name (e.g., brake pads)",
@@ -92,6 +111,7 @@ async function handleMenuFlow(userId, text) {
 
   if (text === "2") {
     sessionMemory.updateSession(userId, { mode: "support" });
+
     return {
       type: "text",
       message: "🤝 Please describe your issue.",
@@ -105,7 +125,7 @@ async function handleMenuFlow(userId, text) {
 }
 
 /**
- * 🔍 SEARCH (TRACKED)
+ * SEARCH
  */
 async function handleSearch(userId, text) {
   try {
@@ -125,7 +145,6 @@ async function handleSearch(userId, text) {
       lastResults: limitedResults,
     });
 
-    // ✅ TRACK SEARCH
     trackEvent("search", {
       user: userId,
       query: text,
@@ -141,11 +160,13 @@ async function handleSearch(userId, text) {
 
     return {
       type: "text",
-      message: `🔎 Top Products:\n\n${message}\n\nReply with number.`,
+      message:
+        `🔎 Top Products:\n\n${message}\n\nReply with number.`,
     };
 
   } catch (error) {
     console.error("Search Error:", error.message);
+
     return {
       type: "text",
       message: "Search error. Try again.",
@@ -154,7 +175,7 @@ async function handleSearch(userId, text) {
 }
 
 /**
- * SELECT PRODUCT (TRACKED)
+ * SELECTION
  */
 async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -172,14 +193,12 @@ async function handleSelection(userId, text) {
   const product = results[index];
   const price = product.variants?.[0]?.price || "";
 
-  // ✅ TRACK PRODUCT SELECTED
   trackEvent("product_selected", {
     user: userId,
     product: product.title,
     price,
   });
 
-  // ✅ TRACK ORDER STARTED
   trackEvent("order_started", {
     user: userId,
     product: product.title,
@@ -201,8 +220,7 @@ async function handleSelection(userId, text) {
     `🔥 Frequently Bought:\n` +
     `1. Brake Cleaner - Rs 850\n` +
     `2. Engine Oil - Rs 4500\n\n` +
-    `Reply 0 to continue\n\n` +
-    `Enter your name:`;
+    `Reply:\n0 → Continue\n1/2 → Add item\n\n`;
 
   if (image) {
     return {
@@ -219,7 +237,7 @@ async function handleSelection(userId, text) {
 }
 
 /**
- * 🛒 ORDER FLOW (TRACKED)
+ * ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -272,11 +290,6 @@ async function handleOrderFlow(userId, text) {
           order: null,
         });
 
-        if (!shopifyOrder) {
-          return "❌ Order failed. Try again.";
-        }
-
-        // ✅ TRACK ORDER CONFIRMED
         trackEvent("order_confirmed", {
           user: userId,
           orderId: shopifyOrder.id,
@@ -287,7 +300,6 @@ async function handleOrderFlow(userId, text) {
           `✅ Order Confirmed!\n\n` +
           `🆔 Order ID: ${shopifyOrder.id}\n` +
           `📦 Delivery: 2–4 days\n\n` +
-          `Our team may call you for confirmation.\n\n` +
           `Thank you for choosing NDES 🚗`
         );
 
@@ -298,7 +310,6 @@ async function handleOrderFlow(userId, text) {
     }
 
     if (text === "2") {
-      // ✅ TRACK DROP-OFF (CANCEL)
       trackEvent("drop_off", {
         user: userId,
         step: "confirm_order_cancelled",
