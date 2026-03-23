@@ -3,8 +3,6 @@
  * PIPELINE (FINAL — CLEAN + STABLE)
  */
 
-const intentMapper = require("../../engine/semantic/intentMapper");
-const queryProcessor = require("../../engine/processors/queryProcessor");
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
@@ -14,7 +12,7 @@ async function messagePipeline({ from, text }) {
 
     if (!from || !text) return null;
 
-    text = text.trim(); // ✅ FIX: sanitize input
+    text = text.trim().toLowerCase();
 
     const session = sessionMemory.getSession(from) || {};
 
@@ -23,10 +21,7 @@ async function messagePipeline({ from, text }) {
      */
     const orderResponse = await handleOrderFlow(from, text);
     if (orderResponse) {
-      return {
-        type: "text",
-        message: orderResponse,
-      };
+      return { type: "text", message: orderResponse };
     }
 
     /**
@@ -37,11 +32,9 @@ async function messagePipeline({ from, text }) {
     }
 
     if (session.mode === "search") {
-      // ✅ FIX: robust number detection
       if (/^\d+$/.test(text)) {
         return await handleSelection(from, text);
       }
-
       return await handleSearch(from, text);
     }
 
@@ -53,11 +46,9 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * STEP 3 — INTENT
+     * STEP 3 — DEFAULT ENTRY (NO INTENT ENGINE)
      */
-    const intent = intentMapper(text);
-
-    if (intent === "greeting") {
+    if (text === "hi" || text === "hello" || text === "start") {
       sessionMemory.updateSession(from, { mode: "menu" });
 
       return {
@@ -70,17 +61,9 @@ async function messagePipeline({ from, text }) {
       };
     }
 
-    if (intent === "search") {
-      sessionMemory.updateSession(from, { mode: "search" });
-      return await handleSearch(from, text);
-    }
-
-    return {
-      type: "text",
-      message:
-        "Type 1 for Search or 2 for Support\n\n" +
-        "Or type product name directly.",
-    };
+    // If user types anything → treat as search
+    sessionMemory.updateSession(from, { mode: "search" });
+    return await handleSearch(from, text);
 
   } catch (error) {
     console.error("❌ Pipeline Error:", error.message);
@@ -116,21 +99,18 @@ async function handleMenuFlow(userId, text) {
 
   return {
     type: "text",
-    message:
-      "Invalid option.\n\n1️⃣ Search Products\n2️⃣ Support",
+    message: "Invalid option.\n\n1️⃣ Search Products\n2️⃣ Support",
   };
 }
 
 /**
- * 🔍 SEARCH
+ * 🔍 SEARCH (DIRECT SHOPIFY — NO PROCESSOR)
  */
 async function handleSearch(userId, text) {
   try {
-    const query = queryProcessor(text);
+    const results = await shopifyClient.searchProducts(text);
 
-    const results = await shopifyClient.searchProducts(query);
-
-    if (!results.length) {
+    if (!results || !results.length) {
       return {
         type: "text",
         message: "❌ No products found.",
@@ -172,7 +152,7 @@ async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const results = session.lastResults || [];
 
-  const index = parseInt(text, 10) - 1;
+  const index = parseInt(text.trim(), 10) - 1;
 
   if (!results[index]) {
     return {
@@ -221,25 +201,30 @@ async function handleOrderFlow(userId, text) {
   }
 
   if (order.step === "awaiting_address") {
-    const shopifyOrder = await shopifyClient.createOrder({
-      name: order.name,
-      address: text,
-      product: order.product,
-    });
+    try {
+      const shopifyOrder = await shopifyClient.createOrder({
+        name: order.name,
+        address: text,
+        product: order.product,
+      });
 
-    // ✅ FIX: return to menu after order
-    sessionMemory.updateSession(userId, { mode: "menu" });
+      sessionMemory.updateSession(userId, { mode: "menu", order: null });
 
-    if (!shopifyOrder) {
+      if (!shopifyOrder) {
+        return "❌ Order failed. Try again.";
+      }
+
+      return (
+        `✅ Order Confirmed!\n` +
+        `Order ID: ${shopifyOrder.id}\n` +
+        `Product: ${order.product.title}\n\n` +
+        `1️⃣ Search Products\n2️⃣ Support`
+      );
+
+    } catch (error) {
+      console.error("Order Error:", error.message);
       return "❌ Order failed. Try again.";
     }
-
-    return (
-      `✅ Order Confirmed!\n` +
-      `Order ID: ${shopifyOrder.id}\n` +
-      `Product: ${order.product.title}\n\n` +
-      `\n1️⃣ Search Products\n2️⃣ Support`
-    );
   }
 
   return null;
