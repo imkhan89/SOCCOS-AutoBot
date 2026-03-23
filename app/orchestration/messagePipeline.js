@@ -1,11 +1,10 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — HARD FIX STATE + FLOW)
+ * PIPELINE (WORKING STABLE VERSION)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
-const { trackEvent } = require("../../utils/tracker");
 
 async function messagePipeline({ from, text }) {
   try {
@@ -13,24 +12,17 @@ async function messagePipeline({ from, text }) {
 
     if (!from || !text) return null;
 
-    text = text.trim().toLowerCase();
+    text = text.trim();
 
     let session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🚨 HARD FIX — FORCE ORDER CONTEXT
+     * 🚨 HARD RULE — FORCE ORDER FLOW
      */
-    if (!session.order && session.lastSelectedProduct) {
-      session.order = {
-        step: "awaiting_name",
-        product: session.lastSelectedProduct,
-      };
-    }
-
-    /**
-     * 🚨 PRIORITY — ORDER FLOW
-     */
-    if (session.order && session.order.step) {
+    if (
+      session.lastSelectedProduct &&
+      (!session.mode || session.mode === "search")
+    ) {
       return {
         type: "text",
         message: await handleOrderFlow(from, text),
@@ -40,184 +32,143 @@ async function messagePipeline({ from, text }) {
     /**
      * MENU
      */
-    if (session.mode === "menu") {
-      return await handleMenuFlow(from, text);
-    }
-
-    /**
-     * SEARCH / SELECTION
-     */
-    if (session.mode === "search") {
-      if (/^\d+$/.test(text)) {
-        return await handleSelection(from, text);
-      }
-      return await handleSearch(from, text);
-    }
-
-    /**
-     * SUPPORT
-     */
-    if (session.mode === "support") {
-      return {
-        type: "text",
-        message: "Support request received.",
-      };
-    }
-
-    /**
-     * DEFAULT ENTRY
-     */
-    if (["hi", "hello", "start"].includes(text)) {
+    if (text.toLowerCase() === "hi") {
       sessionMemory.updateSession(from, { mode: "menu" });
-
-      trackEvent("conversation_started", { user: from });
 
       return {
         type: "text",
         message:
-          "👋 Welcome to NDES AutoBot!\n\n" +
-          "1️⃣ Search Products\n" +
-          "2️⃣ Support\n\nReply with option number",
+          "👋 Welcome\n\n1. Search Products\n2. Support",
       };
     }
 
-    sessionMemory.updateSession(from, { mode: "search" });
-    return await handleSearch(from, text);
+    if (session.mode === "menu") {
+      if (text === "1") {
+        sessionMemory.updateSession(from, { mode: "search" });
 
-  } catch (error) {
-    console.error("❌ Pipeline Error:", error.message);
-    return { type: "text", message: "System error." };
+        return {
+          type: "text",
+          message: "Enter product name",
+        };
+      }
+    }
+
+    /**
+     * SEARCH
+     */
+    if (session.mode === "search" && !/^\d+$/.test(text)) {
+      const results = await shopifyClient.searchProducts(text);
+
+      const limited = results.slice(0, 5);
+
+      sessionMemory.updateSession(from, {
+        lastResults: limited,
+        mode: "search",
+      });
+
+      const msg = limited
+        .map((p, i) => `${i + 1}. ${p.title}`)
+        .join("\n");
+
+      return {
+        type: "text",
+        message: msg + "\n\nReply with number",
+      };
+    }
+
+    /**
+     * SELECTION
+     */
+    if (/^\d+$/.test(text)) {
+      const results = session.lastResults || [];
+      const product = results[parseInt(text) - 1];
+
+      if (!product) {
+        return { type: "text", message: "Invalid" };
+      }
+
+      sessionMemory.updateSession(from, {
+        lastSelectedProduct: product,
+      });
+
+      return {
+        type: "image",
+        image: product.image?.src,
+        caption: `🛒 ${product.title}\nReply 0 to continue`,
+      };
+    }
+
+    return { type: "text", message: "Try again" };
+
+  } catch (err) {
+    console.error(err);
+    return { type: "text", message: "Error" };
   }
 }
 
 /**
- * MENU
- */
-async function handleMenuFlow(userId, text) {
-  if (text === "1") {
-    sessionMemory.updateSession(userId, { mode: "search" });
-    return { type: "text", message: "🔍 Enter product name" };
-  }
-
-  if (text === "2") {
-    sessionMemory.updateSession(userId, { mode: "support" });
-    return { type: "text", message: "Describe your issue" };
-  }
-
-  return { type: "text", message: "Invalid option" };
-}
-
-/**
- * SEARCH
- */
-async function handleSearch(userId, text) {
-  const results = await shopifyClient.searchProducts(text);
-
-  if (!results?.length) {
-    return { type: "text", message: "No products found" };
-  }
-
-  const limited = results.slice(0, 5);
-
-  sessionMemory.updateSession(userId, {
-    mode: "search",
-    lastResults: limited,
-  });
-
-  trackEvent("search", { user: userId, query: text });
-
-  const msg = limited
-    .map((p, i) => `${i + 1}. ${p.title} - Rs ${p.variants?.[0]?.price}`)
-    .join("\n");
-
-  return {
-    type: "text",
-    message: `🔎 Products:\n\n${msg}\n\nReply with number`,
-  };
-}
-
-/**
- * SELECTION (CRITICAL FIX)
- */
-async function handleSelection(userId, text) {
-  const session = sessionMemory.getSession(userId) || {};
-  const results = session.lastResults || [];
-
-  const index = parseInt(text) - 1;
-
-  if (!results[index]) {
-    return { type: "text", message: "Invalid selection" };
-  }
-
-  const product = results[index];
-
-  /**
-   * 🚨 SAVE HARD STATE
-   */
-  sessionMemory.updateSession(userId, {
-    lastSelectedProduct: product, // 🔥 NEW
-    order: {
-      step: "awaiting_name",
-      product,
-    },
-  });
-
-  trackEvent("product_selected", { user: userId });
-
-  return {
-    type: "image",
-    image: product.image?.src || product.images?.[0]?.src,
-    caption:
-      `🛒 ${product.title}\n` +
-      `Reply 0 to continue`,
-  };
-}
-
-/**
- * ORDER FLOW
+ * ORDER FLOW (STATELESS SAFE)
  */
 async function handleOrderFlow(userId, text) {
   let session = sessionMemory.getSession(userId) || {};
-  let order = session.order;
+  let order = session.order || {};
 
-  if (!order) return null;
-
-  if (order.step === "awaiting_name") {
-    if (["0", "1", "2"].includes(text)) {
-      return "Enter your name:";
-    }
+  /**
+   * STEP 1
+   */
+  if (!order.name) {
+    if (text === "0") return "Enter your name:";
 
     sessionMemory.updateSession(userId, {
-      order: { ...order, step: "awaiting_address", name: text },
+      order: { name: text },
     });
 
     return "Enter your address:";
   }
 
-  if (order.step === "awaiting_address") {
+  /**
+   * STEP 2
+   */
+  if (!order.address) {
     sessionMemory.updateSession(userId, {
-      order: { ...order, step: "confirm_order", address: text },
+      order: { ...order, address: text },
     });
 
-    return "Confirm order? 1 Yes / 2 No";
+    return "Confirm? 1 Yes / 2 No";
   }
 
-  if (order.step === "confirm_order") {
-    if (text === "1") {
-      const orderRes = await shopifyClient.createOrder(order);
+  /**
+   * STEP 3
+   */
+  if (text === "1") {
+    const product = session.lastSelectedProduct;
 
-      sessionMemory.updateSession(userId, { order: null, mode: "menu" });
+    const orderRes = await shopifyClient.createOrder({
+      product,
+      name: order.name,
+      address: order.address,
+    });
 
-      return `✅ Order Confirmed ID: ${orderRes.id}`;
-    }
+    sessionMemory.updateSession(userId, {
+      order: null,
+      lastSelectedProduct: null,
+      mode: "menu",
+    });
 
-    if (text === "2") {
-      sessionMemory.updateSession(userId, { order: null, mode: "menu" });
-      return "Order cancelled";
-    }
+    return `✅ Order Confirmed ${orderRes.id}`;
   }
 
-  return null;
+  if (text === "2") {
+    sessionMemory.updateSession(userId, {
+      order: null,
+      lastSelectedProduct: null,
+      mode: "menu",
+    });
+
+    return "Cancelled";
+  }
+
+  return "Enter name:";
 }
 
 module.exports = messagePipeline;
