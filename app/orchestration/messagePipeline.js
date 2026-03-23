@@ -1,11 +1,11 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (STEP 6 — FINAL FIXED)
+ * PIPELINE (STEP 7 — SHOPIFY CONNECTED)
  */
 
 const intentMapper = require("../../engine/semantic/intentMapper");
 const queryProcessor = require("../../engine/processors/queryProcessor");
-const { searchProducts } = require("../search/searchService");
+const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
 async function messagePipeline({ from, text }) {
@@ -28,14 +28,13 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * STEP 2 — MODE CONTROL (FIXED)
+     * STEP 2 — MODE CONTROL
      */
     if (session.mode === "menu") {
       return await handleMenuFlow(from, text);
     }
 
     if (session.mode === "search") {
-      // 🔥 FIX: detect selection
       if (!isNaN(text)) {
         return await handleSelection(from, text);
       }
@@ -55,9 +54,6 @@ async function messagePipeline({ from, text }) {
      */
     const intent = intentMapper(text);
 
-    /**
-     * STEP 4 — ROUTING
-     */
     if (intent === "greeting") {
       sessionMemory.updateSession(from, { mode: "menu" });
 
@@ -71,18 +67,11 @@ async function messagePipeline({ from, text }) {
       };
     }
 
-    if (intent === "order_select") {
-      return await handleSelection(from, text);
-    }
-
     if (intent === "search") {
       sessionMemory.updateSession(from, { mode: "search" });
       return await handleSearch(from, text);
     }
 
-    /**
-     * DEFAULT
-     */
     return {
       type: "text",
       message:
@@ -109,7 +98,7 @@ async function handleMenuFlow(userId, text) {
 
     return {
       type: "text",
-      message: "🔍 Enter product name (e.g., Civic brake pads)",
+      message: "🔍 Enter product name (e.g., brake pads)",
     };
   }
 
@@ -125,32 +114,23 @@ async function handleMenuFlow(userId, text) {
   return {
     type: "text",
     message:
-      "Invalid option.\n\n" +
-      "1️⃣ Search Products\n" +
-      "2️⃣ Support",
+      "Invalid option.\n\n1️⃣ Search Products\n2️⃣ Support",
   };
 }
 
 /**
- * SEARCH FLOW
+ * 🔍 SEARCH (SHOPIFY)
  */
 async function handleSearch(userId, text) {
   try {
     const query = queryProcessor(text);
 
-    if (!query) {
+    const results = await shopifyClient.searchProducts(query);
+
+    if (!results.length) {
       return {
         type: "text",
-        message: "Please enter a valid product name.",
-      };
-    }
-
-    const results = await searchProducts(query);
-
-    if (!results || results.length === 0) {
-      return {
-        type: "text",
-        message: "No products found.",
+        message: "❌ No products found.",
       };
     }
 
@@ -160,17 +140,16 @@ async function handleSearch(userId, text) {
     });
 
     const message = results
-      .map((item, i) => {
-        const name = item.title || item.name || "Product";
-        const price = item.price ? `- Rs ${item.price}` : "";
-        return `${i + 1}. ${name} ${price}`;
+      .map((p, i) => {
+        const price = p.variants?.[0]?.price || "";
+        return `${i + 1}. ${p.title} - Rs ${price}`;
       })
       .join("\n");
 
     return {
       type: "text",
       message:
-        `Available Products:\n\n${message}\n\nReply with number to select.`,
+        `🔎 Available Products:\n\n${message}\n\nReply with number.`,
     };
 
   } catch (error) {
@@ -184,18 +163,18 @@ async function handleSearch(userId, text) {
 }
 
 /**
- * ORDER SELECTION
+ * SELECT PRODUCT
  */
 async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
   const results = session.lastResults || [];
 
-  const index = parseInt(text, 10) - 1;
+  const index = parseInt(text) - 1;
 
-  if (isNaN(index) || !results[index]) {
+  if (!results[index]) {
     return {
       type: "text",
-      message: "Invalid selection.",
+      message: "❌ Invalid selection.",
     };
   }
 
@@ -208,14 +187,17 @@ async function handleSelection(userId, text) {
     },
   });
 
+  const price = product.variants?.[0]?.price || "";
+
   return {
     type: "text",
-    message: `Selected: ${product.title || product.name}\nEnter your name:`,
+    message:
+      `🛒 Selected:\n${product.title}\n💰 Rs ${price}\n\nEnter your name:`,
   };
 }
 
 /**
- * ORDER FLOW
+ * 🛒 ORDER FLOW (NOW REAL SHOPIFY)
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -236,8 +218,21 @@ async function handleOrderFlow(userId, text) {
   }
 
   if (order.step === "awaiting_address") {
+    const shopifyOrder = await shopifyClient.createOrder({
+      name: order.name,
+      address: text,
+      product: order.product,
+    });
+
     sessionMemory.clearSession(userId);
-    return "✅ Order placed successfully!";
+
+    if (!shopifyOrder) {
+      return "❌ Order failed. Try again.";
+    }
+
+    return `✅ Order Confirmed!
+Order ID: ${shopifyOrder.id}
+Product: ${order.product.title}`;
   }
 
   return null;
