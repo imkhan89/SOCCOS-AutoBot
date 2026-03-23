@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (FINAL — SEARCH + ORDER)
+ * Shopify Client (FINAL — FIXED SEARCH + ORDER)
  */
 
 const axios = require("axios");
@@ -14,7 +14,7 @@ const headers = {
 };
 
 /**
- * 🔍 SEARCH PRODUCTS (NEW)
+ * 🔍 SEARCH PRODUCTS (FIXED — FLEXIBLE MATCH)
  */
 async function searchProducts(query) {
   try {
@@ -25,14 +25,21 @@ async function searchProducts(query) {
 
     const response = await axios.get(`${BASE_URL}/products.json`, {
       headers,
-      params: { limit: 20 },
+      params: { limit: 50 }, // increased pool
     });
 
     const products = response.data.products || [];
 
-    return products.filter((p) =>
-      p.title.toLowerCase().includes(query.toLowerCase())
-    );
+    if (!query) return products;
+
+    const keywords = query.toLowerCase().split(" ");
+
+    return products.filter((p) => {
+      const title = p.title.toLowerCase();
+
+      // ✅ match ANY keyword (not strict full string)
+      return keywords.some((word) => title.includes(word));
+    });
 
   } catch (error) {
     console.error("❌ Shopify Search Error:", error.message);
@@ -41,7 +48,7 @@ async function searchProducts(query) {
 }
 
 /**
- * 🛒 CREATE ORDER (UPDATED — USE VARIANT ID)
+ * 🛒 CREATE ORDER (STABLE)
  */
 async function createOrder(orderData, retries = 2) {
   try {
@@ -56,7 +63,7 @@ async function createOrder(orderData, retries = 2) {
       order: {
         line_items: [
           {
-            variant_id: orderData.product.variants[0].id,
+            variant_id: orderData.product?.variants?.[0]?.id,
             quantity: 1,
           },
         ],
