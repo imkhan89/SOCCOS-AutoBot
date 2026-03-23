@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * PIPELINE (FINAL — CLEAN + STABLE)
+ * PIPELINE (FINAL — REVENUE OPTIMIZED)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -46,7 +46,7 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * STEP 3 — DEFAULT ENTRY (NO INTENT ENGINE)
+     * DEFAULT ENTRY
      */
     if (text === "hi" || text === "hello" || text === "start") {
       sessionMemory.updateSession(from, { mode: "menu" });
@@ -61,7 +61,6 @@ async function messagePipeline({ from, text }) {
       };
     }
 
-    // If user types anything → treat as search
     sessionMemory.updateSession(from, { mode: "search" });
     return await handleSearch(from, text);
 
@@ -104,7 +103,7 @@ async function handleMenuFlow(userId, text) {
 }
 
 /**
- * 🔍 SEARCH (DIRECT SHOPIFY — NO PROCESSOR)
+ * 🔍 SEARCH (LIMITED RESULTS)
  */
 async function handleSearch(userId, text) {
   try {
@@ -117,12 +116,15 @@ async function handleSearch(userId, text) {
       };
     }
 
+    // ✅ LIMIT RESULTS (CRITICAL FIX)
+    const limitedResults = results.slice(0, 5);
+
     sessionMemory.updateSession(userId, {
       mode: "search",
-      lastResults: results,
+      lastResults: limitedResults,
     });
 
-    const message = results
+    const message = limitedResults
       .map((p, i) => {
         const price = p.variants?.[0]?.price || "";
         return `${i + 1}. ${p.title} - Rs ${price}`;
@@ -132,7 +134,7 @@ async function handleSearch(userId, text) {
     return {
       type: "text",
       message:
-        `🔎 Available Products:\n\n${message}\n\nReply with number.`,
+        `🔎 Top Products:\n\n${message}\n\nReply with number.`,
     };
 
   } catch (error) {
@@ -146,7 +148,7 @@ async function handleSearch(userId, text) {
 }
 
 /**
- * SELECT PRODUCT
+ * SELECT PRODUCT (IMAGE + UPSELL)
  */
 async function handleSelection(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -162,6 +164,7 @@ async function handleSelection(userId, text) {
   }
 
   const product = results[index];
+  const price = product.variants?.[0]?.price || "";
 
   sessionMemory.updateSession(userId, {
     order: {
@@ -170,17 +173,34 @@ async function handleSelection(userId, text) {
     },
   });
 
-  const price = product.variants?.[0]?.price || "";
+  const image =
+    product.image?.src || product.images?.[0]?.src || null;
+
+  const caption =
+    `🛒 ${product.title}\n` +
+    `💰 Rs ${price}\n\n` +
+    `🔥 Frequently Bought:\n` +
+    `1. Brake Cleaner - Rs 850\n` +
+    `2. Engine Oil - Rs 4500\n\n` +
+    `Reply 0 to continue\n\n` +
+    `Enter your name:`;
+
+  if (image) {
+    return {
+      type: "image",
+      image,
+      caption,
+    };
+  }
 
   return {
     type: "text",
-    message:
-      `🛒 Selected:\n${product.title}\n💰 Rs ${price}\n\nEnter your name:`,
+    message: caption,
   };
 }
 
 /**
- * 🛒 ORDER FLOW
+ * 🛒 ORDER FLOW (COD CONFIRMATION)
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -201,30 +221,66 @@ async function handleOrderFlow(userId, text) {
   }
 
   if (order.step === "awaiting_address") {
-    try {
-      const shopifyOrder = await shopifyClient.createOrder({
-        name: order.name,
+    sessionMemory.updateSession(userId, {
+      order: {
+        ...order,
+        step: "confirm_order",
         address: text,
-        product: order.product,
-      });
+      },
+    });
 
-      sessionMemory.updateSession(userId, { mode: "menu", order: null });
+    return (
+      `Please confirm your order:\n\n` +
+      `Product: ${order.product.title}\n` +
+      `Price: Rs ${order.product.variants?.[0]?.price}\n` +
+      `Name: ${order.name}\n` +
+      `Address: ${text}\n\n` +
+      `Reply:\n1 → Confirm\n2 → Cancel`
+    );
+  }
 
-      if (!shopifyOrder) {
+  if (order.step === "confirm_order") {
+    if (text === "1") {
+      try {
+        const shopifyOrder = await shopifyClient.createOrder({
+          name: order.name,
+          address: order.address,
+          product: order.product,
+        });
+
+        sessionMemory.updateSession(userId, {
+          mode: "menu",
+          order: null,
+        });
+
+        if (!shopifyOrder) {
+          return "❌ Order failed. Try again.";
+        }
+
+        return (
+          `✅ Order Confirmed!\n\n` +
+          `🆔 Order ID: ${shopifyOrder.id}\n` +
+          `📦 Delivery: 2–4 days\n\n` +
+          `Our team may call you for confirmation.\n\n` +
+          `Thank you for choosing NDES 🚗`
+        );
+
+      } catch (error) {
+        console.error("Order Error:", error.message);
         return "❌ Order failed. Try again.";
       }
-
-      return (
-        `✅ Order Confirmed!\n` +
-        `Order ID: ${shopifyOrder.id}\n` +
-        `Product: ${order.product.title}\n\n` +
-        `1️⃣ Search Products\n2️⃣ Support`
-      );
-
-    } catch (error) {
-      console.error("Order Error:", error.message);
-      return "❌ Order failed. Try again.";
     }
+
+    if (text === "2") {
+      sessionMemory.updateSession(userId, {
+        mode: "menu",
+        order: null,
+      });
+
+      return "❌ Order cancelled.\n\n1️⃣ Search\n2️⃣ Support";
+    }
+
+    return "Reply 1 to Confirm or 2 to Cancel";
   }
 
   return null;
