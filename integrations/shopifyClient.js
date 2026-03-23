@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (FINAL — PRODUCTION READY)
+ * Shopify Client (FINAL — HARDENED)
  */
 
 const axios = require("axios");
@@ -14,7 +14,7 @@ const headers = {
 };
 
 /**
- * 🔍 SEARCH PRODUCTS (FINAL FIXED)
+ * 🔍 SEARCH PRODUCTS (HARDENED)
  */
 async function searchProducts(query) {
   try {
@@ -34,21 +34,31 @@ async function searchProducts(query) {
 
     if (!query) return products;
 
-    // ✅ CLEAN QUERY
     const keywords = query
       .toLowerCase()
       .trim()
       .split(" ")
-      .filter(Boolean); // removes empty values
+      .filter(Boolean);
 
     const filtered = products.filter((p) => {
       const title = (p.title || "").toLowerCase();
+      const tags = (p.tags || "").toLowerCase();
+      const type = (p.product_type || "").toLowerCase();
+      const vendor = (p.vendor || "").toLowerCase();
 
-      return keywords.some((word) => title.includes(word));
+      const searchableText = `${title} ${tags} ${type} ${vendor}`;
+
+      return keywords.some((word) => searchableText.includes(word));
     });
 
-    console.log("🔍 Search Query:", query);
-    console.log("✅ Matched Products:", filtered.length);
+    console.log("🔍 Query:", query);
+    console.log("✅ Matched:", filtered.length);
+
+    // ✅ FALLBACK (CRITICAL)
+    if (filtered.length === 0) {
+      console.warn("⚠️ No match → returning default products");
+      return products.slice(0, 5);
+    }
 
     return filtered;
 
@@ -59,7 +69,7 @@ async function searchProducts(query) {
 }
 
 /**
- * 🛒 CREATE ORDER (FINAL SAFE)
+ * 🛒 CREATE ORDER (HARDENED)
  */
 async function createOrder(orderData, retries = 2) {
   try {
@@ -84,10 +94,10 @@ async function createOrder(orderData, retries = 2) {
           },
         ],
         customer: {
-          first_name: orderData.name,
+          first_name: orderData.name || "Customer",
         },
         shipping_address: {
-          address1: orderData.address,
+          address1: orderData.address || "N/A",
           country: "Pakistan",
         },
         financial_status: "pending",
@@ -99,6 +109,8 @@ async function createOrder(orderData, retries = 2) {
       payload,
       { headers }
     );
+
+    console.log("✅ Shopify Order Created:", response.data.order.id);
 
     return response.data.order;
 
