@@ -33,8 +33,7 @@ async function messagePipeline({ from, text }) {
 
       return {
         type: "text",
-        message:
-          "👋 Welcome\n\n1. Search Products\n2. Support",
+        message: "👋 Welcome\n\n1. Search Products\n2. Support",
       };
     }
 
@@ -107,7 +106,6 @@ async function messagePipeline({ from, text }) {
     }
 
     return { type: "text", message: "Try again" };
-
   } catch (err) {
     console.error(err);
     return { type: "text", message: "System error" };
