@@ -1,5 +1,5 @@
 /**
- * Abandoned Cart Recovery Service
+ * Abandoned Click Recovery Service (UPDATED — WEBSITE FLOW)
  * STEP 10 — Revenue Recovery Engine
  */
 
@@ -16,8 +16,8 @@ async function runAbandonedRecovery() {
     for (const userId in sessions) {
       const session = sessions[userId];
 
-      // ✅ Skip if no active order
-      if (!session.order || !session.order.step) continue;
+      // ✅ NEW LOGIC: Check if user clicked a product
+      if (!session.lastClickedProduct) continue;
 
       // ✅ Skip if already sent recovery
       if (session.recoverySent) continue;
@@ -26,23 +26,35 @@ async function runAbandonedRecovery() {
 
       // ✅ Check inactivity
       if (now - lastActivity > TIME_LIMIT) {
+        const product = session.lastClickedProduct;
+
+        const productUrl = product?.handle
+          ? `https://ndestore.com/products/${product.handle}?utm_source=whatsapp&utm_medium=recovery&utm_campaign=abandoned`
+          : "";
+
         console.log("♻️ Sending recovery message to:", userId);
 
-        await whatsappSender.sendText(
-          userId,
-          "⏳ Still interested?\n\n" +
-          "Your selected item is in high demand 🔥\n\n" +
-          "Reply *YES* to continue your order"
-        );
+        try {
+          await whatsappSender.sendText(
+            userId,
+            "⏳ Still interested?\n\n" +
+              `🔥 ${product?.title || "Your selected product"}\n\n` +
+              "Complete your order here:\n" +
+              `${productUrl}\n\n` +
+              "⚡ Limited stock available"
+          );
 
-        // ✅ Mark as sent (avoid spam)
-        sessionMemory.updateSession(userId, {
-          recoverySent: true,
-        });
+          // ✅ Mark as sent (avoid spam)
+          sessionMemory.updateSession(userId, {
+            recoverySent: true,
+          });
+        } catch (sendError) {
+          console.error("❌ Recovery Send Error:", sendError.message);
+        }
       }
     }
   } catch (err) {
-    console.error("❌ Recovery Error:", err);
+    console.error("❌ Recovery Error:", err.message);
   }
 }
 
