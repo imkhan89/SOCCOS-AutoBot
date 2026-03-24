@@ -1,8 +1,9 @@
 /**
  * SOCCOS-AutoBot
- * Session Memory (FINAL — STEP 10 READY)
+ * Session Memory (FINAL — HARDENED + SCALE READY)
  */
 
+const SESSION_TTL = 1000 * 60 * 60 * 24; // 24 hours
 const sessions = {};
 
 /**
@@ -15,6 +16,8 @@ function createDefaultSession() {
     context: {},
     lastResults: [],
 
+    mode: null,
+
     order: {
       step: null,
       product: null,
@@ -23,12 +26,32 @@ function createDefaultSession() {
       isProcessing: false,
     },
 
-    // ✅ NEW (Recovery System)
+    // ✅ Recovery System
     lastActivity: Date.now(),
     recoverySent: false,
 
+    // ✅ Anti-spam
+    lastMessageTime: null,
+
     updatedAt: Date.now(),
   };
+}
+
+/**
+ * 🧹 CLEAN EXPIRED SESSIONS (AUTO GC)
+ */
+function cleanupSessions() {
+  const now = Date.now();
+
+  for (const userId in sessions) {
+    const session = sessions[userId];
+
+    if (!session?.updatedAt) continue;
+
+    if (now - session.updatedAt > SESSION_TTL) {
+      delete sessions[userId];
+    }
+  }
 }
 
 /**
@@ -36,6 +59,8 @@ function createDefaultSession() {
  */
 function getSession(userId) {
   if (!userId) return createDefaultSession();
+
+  cleanupSessions(); // ✅ auto cleanup
 
   if (!sessions[userId]) {
     sessions[userId] = createDefaultSession();
@@ -48,6 +73,7 @@ function getSession(userId) {
  * GET ALL SESSIONS (for recovery engine)
  */
 function getAllSessions() {
+  cleanupSessions(); // ✅ keep memory clean
   return sessions;
 }
 
@@ -75,7 +101,7 @@ function updateSession(userId, data = {}) {
       ...(data.order || {}),
     },
 
-    // ✅ CRITICAL: update activity timestamp
+    // ✅ ALWAYS refresh activity (critical for recovery)
     lastActivity: Date.now(),
 
     // preserve recovery flag unless explicitly changed
@@ -99,9 +125,17 @@ function clearSession(userId) {
   sessions[userId] = createDefaultSession();
 }
 
+/**
+ * ❗ OPTIONAL (FUTURE REDIS MIGRATION READY)
+ */
+function exportSessions() {
+  return sessions;
+}
+
 module.exports = {
   getSession,
-  getAllSessions, // ✅ NEW
+  getAllSessions,
   updateSession,
   clearSession,
+  exportSessions, // ready for Redis migration
 };
