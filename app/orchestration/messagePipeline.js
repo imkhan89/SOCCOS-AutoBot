@@ -18,15 +18,17 @@ function buildProductUrl(product, userId) {
 }
 
 /**
- * 🧠 SMART SEARCH INTENT CHECK (IMPROVED)
+ * 🧠 SMART SEARCH INTENT CHECK
  */
 function isSearchQuery(input) {
   if (!input) return false;
 
-  // ignore very short inputs
-  if (input.length < 3) return false;
+  const cleaned = input.trim().toLowerCase();
 
-  // block non-search conversational words
+  // ignore very short inputs
+  if (cleaned.length < 3) return false;
+
+  // ignore menu-like / conversational inputs
   const blocked = [
     "ok",
     "okay",
@@ -38,7 +40,7 @@ function isSearchQuery(input) {
     "thank you",
   ];
 
-  if (blocked.includes(input)) return false;
+  if (blocked.includes(cleaned)) return false;
 
   return true;
 }
@@ -53,14 +55,15 @@ async function messagePipeline({ from, text }) {
     let session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🔴 STEP 1 FIX — ALWAYS UPDATE LAST ACTIVITY
+     * 🔴 CRITICAL FIX — ALWAYS UPDATE LAST ACTIVITY
+     * This keeps recovery timing accurate.
      */
     sessionMemory.updateSession(from, {
       lastActivity: Date.now(),
     });
 
     /**
-     * 🔴 STEP 3 FIX — SIMPLE RATE LIMIT (ANTI-SPAM)
+     * 🔴 SIMPLE RATE LIMIT — BASIC SPAM PROTECTION
      */
     if (
       session.lastMessageTime &&
@@ -217,7 +220,6 @@ async function messagePipeline({ from, text }) {
         "🤖 I didn’t understand that.\n\n" +
         "Try typing a product name (e.g. Air Filter)",
     };
-
   } catch (err) {
     console.error(err);
     return { type: "text", message: "System error" };
