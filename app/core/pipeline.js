@@ -1,5 +1,5 @@
 /**
- * SAE-V2 CORE PIPELINE (FINAL - HARDENED)
+ * SAE-V2 CORE PIPELINE (FINAL - HARDENED + LOGGING)
  * --------------------------------
  * Orchestrator ONLY
  * NO UI, NO business logic
@@ -12,6 +12,10 @@ const menuIntegration = require("../menus/menu.integration");
 const searchIntegration = require("../../services/search/search.integration");
 const aiIntegration = require("../../services/ai/ai.integration");
 const middleware = require("../../services/middleware/middleware.integration");
+
+// Logging
+const { logChat } = require("../../services/logging/chatLogger");
+const { logError } = require("../../services/logging/errorLogger");
 
 module.exports = async function pipeline({ from, text }) {
   try {
@@ -31,53 +35,79 @@ module.exports = async function pipeline({ from, text }) {
       processed = { text }; // fallback
     }
 
-    const cleanText = (processed?.text || text || "").toString().trim().toLowerCase();
+    const cleanText = (processed?.text || text || "")
+      .toString()
+      .trim()
+      .toLowerCase();
 
     if (!cleanText) {
-      return {
+      const response = {
         type: "text",
         message: "Please enter a valid input",
       };
+
+      logChat({ userId: from, message: text, response });
+      return response;
     }
 
     const session = sessionMemory.getSession(from);
+
+    let response = null;
 
     /**
      * 2. ORDER FLOW (HIGHEST PRIORITY)
      */
     if (session.order && session.order.step) {
-      const orderResponse = await menuIntegration.handleOrder(from, cleanText);
-      if (orderResponse) return orderResponse;
+      response = await menuIntegration.handleOrder(from, cleanText);
+      if (response) {
+        logChat({ userId: from, message: cleanText, response });
+        return response;
+      }
     }
 
     /**
      * 3. MENU SYSTEM
      */
-    const menuResponse = await menuIntegration.handleMenu(from, cleanText);
-    if (menuResponse) return menuResponse;
+    response = await menuIntegration.handleMenu(from, cleanText);
+    if (response) {
+      logChat({ userId: from, message: cleanText, response });
+      return response;
+    }
 
     /**
      * 4. SEARCH MODULE
      */
-    const searchResponse = await searchIntegration.handleSearch(from, cleanText);
-    if (searchResponse) return searchResponse;
+    response = await searchIntegration.handleSearch(from, cleanText);
+    if (response) {
+      logChat({ userId: from, message: cleanText, response });
+      return response;
+    }
 
     /**
      * 5. AI FALLBACK
      */
-    const aiResponse = await aiIntegration.handleAI(from, cleanText);
-    if (aiResponse) return aiResponse;
+    response = await aiIntegration.handleAI(from, cleanText);
+    if (response) {
+      logChat({ userId: from, message: cleanText, response });
+      return response;
+    }
 
     /**
      * DEFAULT RESPONSE
      */
-    return {
+    response = {
       type: "text",
       message: "Invalid input. Please try again.",
     };
 
+    logChat({ userId: from, message: cleanText, response });
+
+    return response;
+
   } catch (error) {
     console.error("❌ Pipeline Error:", error.message);
+
+    logError("pipeline", error);
 
     return {
       type: "text",
