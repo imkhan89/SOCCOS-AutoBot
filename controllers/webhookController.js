@@ -1,10 +1,12 @@
 /**
- * SOCCOS-AutoBot
- * Webhook Controller (FINAL — CLEAN + HARDENED)
+ * SAE-V2 Webhook Controller (FINAL - REFACTORED)
+ * --------------------------------
+ * Clean entry point
+ * Uses pipeline.integration + sendResponse
  */
 
 const env = require("../config/env");
-const messagePipeline = require("../app/orchestration/messagePipeline");
+const pipelineIntegration = require("../app/core/pipeline.integration");
 const whatsappService = require("../services/whatsappService");
 
 /**
@@ -34,17 +36,14 @@ exports.verifyWebhook = (req, res) => {
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    const body = req.body;
-
-    // ✅ Always acknowledge immediately (critical for WhatsApp)
+    // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
-    // 🔍 Extract message safely
     const message =
-      body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+      req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
     if (!message) {
-      console.log("⚠️ No message object (status update or delivery event)");
+      console.log("⚠️ No message object");
       return;
     }
 
@@ -56,7 +55,9 @@ exports.handleWebhook = async (req, res) => {
 
     let text = "";
 
-    // ✅ Handle all supported message types
+    /**
+     * SUPPORT ALL TYPES
+     */
     if (message.text?.body) {
       text = message.text.body;
     } else if (message.button?.text) {
@@ -73,24 +74,23 @@ exports.handleWebhook = async (req, res) => {
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * 🔥 PIPELINE (CORE BRAIN)
+     * 🔥 PIPELINE (NEW CORE)
      */
-    const response = await messagePipeline({ from, text });
+    const response = await pipelineIntegration.runPipeline({
+      from,
+      text,
+    });
 
     console.log("📤 Pipeline response:", response);
 
     /**
-     * ✅ SEND RESPONSE
+     * ✅ SEND RESPONSE (NEW FLOW)
      */
     if (!response) return;
 
-    if (response.type === "text") {
-      await whatsappService.sendText(from, response.message);
-    }
+    response.to = from;
 
-    if (response.type === "image") {
-      await whatsappService.sendImage(from, response.image, response.caption);
-    }
+    await whatsappService.sendResponse(response);
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
