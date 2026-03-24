@@ -1,103 +1,45 @@
 /**
- * SOCCOS-AutoBot
- * WhatsApp Service (FINAL — CLEAN + PRODUCTION READY)
+ * SAE-V2 WHATSAPP SERVICE (FINAL - REFACTORED)
+ * --------------------------------
+ * Single entry point for sending messages
+ * Uses formatter.integration layer
+ * NO direct formatter usage
  */
 
-const formatter = require("../interface/formatters/whatsappFormatter");
+const formatterIntegration = require("../interface/formatters/formatter.integration");
 const sender = require("../interface/sender/whatsappSender");
 
 /**
- * SEND TEXT MESSAGE
+ * SEND RESPONSE (MAIN FUNCTION)
  */
-async function sendText(to, message) {
+async function sendResponse(response) {
   try {
-    if (!to || !message) return null;
+    if (!response || typeof response !== "object") {
+      console.warn("⚠️ Invalid response object");
+      return null;
+    }
 
-    message = message.toString().trim();
+    /**
+     * FORMAT RESPONSE → WhatsApp payload
+     */
+    const payload = formatterIntegration.formatResponse(response);
 
-    const payload = formatter.formatTextMessage(to, message);
-    if (!payload) return null;
+    if (!payload) {
+      console.warn("⚠️ Failed to format response");
+      return null;
+    }
 
+    /**
+     * SEND MESSAGE
+     */
     return await sender.send(payload);
 
   } catch (error) {
-    console.error("❌ WhatsApp sendText error:", error.message);
-    return null;
-  }
-}
-
-/**
- * SEND IMAGE MESSAGE (🔥 NEW — REQUIRED FOR CONVERSION)
- */
-async function sendImage(to, imageUrl, caption = "") {
-  try {
-    if (!to || !imageUrl) return null;
-
-    const payload = formatter.formatImageMessage(
-      to,
-      imageUrl,
-      caption
-    );
-
-    if (!payload) return null;
-
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendImage error:", error.message);
-    return null;
-  }
-}
-
-/**
- * SEND BUTTON MESSAGE
- */
-async function sendButtons(to, bodyText, buttons = []) {
-  try {
-    if (!to || !bodyText) return null;
-
-    const payload = formatter.formatButtonMessage(
-      to,
-      bodyText,
-      buttons
-    );
-
-    if (!payload) return null;
-
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendButtons error:", error.message);
-    return null;
-  }
-}
-
-/**
- * SEND LIST MESSAGE
- */
-async function sendList(to, bodyText, sections = []) {
-  try {
-    if (!to || !bodyText) return null;
-
-    const payload = formatter.formatListMessage(
-      to,
-      bodyText,
-      sections
-    );
-
-    if (!payload) return null;
-
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendList error:", error.message);
+    console.error("❌ WhatsApp sendResponse error:", error.message);
     return null;
   }
 }
 
 module.exports = {
-  sendText,
-  sendImage,   // ✅ Added
-  sendButtons,
-  sendList,
+  sendResponse,
 };
