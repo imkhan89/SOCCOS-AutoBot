@@ -1,14 +1,22 @@
 /**
- * SAE-V2 Webhook Controller (FINAL — PRODUCTION SAFE)
+ * SAE-V2 Webhook Controller (FINAL — HARDENED + PRODUCTION SAFE)
  */
 
 const env = require("../config/env");
 const pipelineIntegration = require("../app/core/pipeline.integration");
-const whatsappService = require("../services/whatsappService");
+
+// ✅ Use correct sender (Step 7 aligned)
+const whatsappSender = require("../interface/sender/whatsappSender");
 
 // Logging
 const { logChat } = require("../services/logging/chatLogger");
 const { logError } = require("../services/logging/errorLogger");
+
+/**
+ * 🧠 Deduplication cache (in-memory)
+ */
+const processedMessages = new Set();
+const MAX_CACHE = 1000;
 
 /**
  * GET /webhook (Verification)
@@ -32,6 +40,16 @@ exports.verifyWebhook = (req, res) => {
 };
 
 /**
+ * 🧹 Maintain deduplication cache size
+ */
+function maintainCache() {
+  if (processedMessages.size > MAX_CACHE) {
+    const firstKey = processedMessages.values().next().value;
+    processedMessages.delete(firstKey);
+  }
+}
+
+/**
  * POST /webhook (Main Handler)
  */
 exports.handleWebhook = async (req, res) => {
@@ -48,6 +66,19 @@ exports.handleWebhook = async (req, res) => {
     if (!message || !message.from) return;
 
     /**
+     * 🔴 DUPLICATE PROTECTION (CRITICAL)
+     */
+    const messageId = message.id;
+    if (messageId && processedMessages.has(messageId)) {
+      return;
+    }
+
+    if (messageId) {
+      processedMessages.add(messageId);
+      maintainCache();
+    }
+
+    /**
      * ✅ EXTRACT TEXT SAFELY
      */
     let text = "";
@@ -59,7 +90,7 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ignore unsupported types silently
+      return; // ignore unsupported types
     }
 
     text = String(text).trim();
@@ -85,6 +116,7 @@ exports.handleWebhook = async (req, res) => {
       response = await runPipeline({ from, text });
     } catch (pipelineError) {
       console.error("❌ Pipeline Error:", pipelineError.message);
+
       response = {
         type: "text",
         message: "⚠️ Temporary issue. Please try again.",
@@ -99,33 +131,26 @@ exports.handleWebhook = async (req, res) => {
     if (!response || !response.type || !response.message) return;
 
     /**
-     * ✅ SEND RESPONSE SAFELY
+     * ✅ SEND RESPONSE (Step 7 aligned)
      */
-    const outbound = {
-      type: response.type,
-      message: String(response.message),
-      to: from,
-    };
-
     try {
-      await whatsappService.sendResponse(outbound);
+      await whatsappSender.sendResponse(from, response);
       console.log("✅ WhatsApp message sent:", from);
     } catch (sendError) {
       console.error("❌ Send Error:", sendError.message);
     }
 
     /**
-     * ✅ CLEAN LOGGING (NO UNDEFINED)
+     * ✅ CLEAN LOGGING
      */
     logChat({
       userId: from,
       message: text,
-      response: outbound.message,
+      response: response.message,
     });
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
-
     logError("webhook", error);
   }
 };
