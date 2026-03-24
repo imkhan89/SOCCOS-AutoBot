@@ -1,13 +1,13 @@
 /**
- * STEP 11 — WEBSITE CONVERSION PIPELINE
- * WhatsApp → Product Discovery → Website Checkout
+ * FINAL PIPELINE — WEBSITE FLOW + TRACKING + UX FIX
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
+const { logClick } = require("../../services/logging/chatLogger");
 
 /**
- * Build website product URL with tracking
+ * 🔗 BUILD PRODUCT URL
  */
 function buildProductUrl(product, userId) {
   if (!product?.handle) return "";
@@ -109,15 +109,32 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * PRODUCT DETAIL
+     * PRODUCT SELECTION (FIXED)
      */
     if (/^\d+$/.test(input)) {
       const results = session.lastResults || [];
+
+      // ✅ FIX 1: Prevent invalid selection before search
+      if (!results.length) {
+        return {
+          type: "text",
+          message:
+            "⚠️ Please search for a product first\n\nType product name (e.g. Air Filter)",
+        };
+      }
+
       const product = results[parseInt(input, 10) - 1];
 
       if (!product) {
-        return { type: "text", message: "❌ Invalid selection" };
+        return {
+          type: "text",
+          message:
+            "❌ Invalid selection\n\nPlease choose a valid number from the list",
+        };
       }
+
+      // ✅ STEP 12: Track click
+      logClick(from, product);
 
       const price = product.variants?.[0]?.price || "";
       const url = buildProductUrl(product, from);
@@ -139,11 +156,15 @@ async function messagePipeline({ from, text }) {
       };
     }
 
+    /**
+     * FALLBACK
+     */
     return {
       type: "text",
       message:
         "🤖 I didn’t understand that.\n\nType *hi* to start again.",
     };
+
   } catch (err) {
     console.error(err);
     return { type: "text", message: "System error" };
