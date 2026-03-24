@@ -28,7 +28,6 @@ exports.verifyWebhook = (req, res) => {
     }
 
     return res.sendStatus(403);
-
   } catch (error) {
     console.error("❌ Verification Error:", error.message);
     return res.sendStatus(500);
@@ -40,7 +39,7 @@ exports.verifyWebhook = (req, res) => {
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    // ✅ Always acknowledge immediately
+    // Acknowledge immediately
     res.sendStatus(200);
 
     const message =
@@ -78,7 +77,7 @@ exports.handleWebhook = async (req, res) => {
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * 🧾 LOG INCOMING
+     * LOG INCOMING
      */
     logChat({
       userId: from,
@@ -86,9 +85,16 @@ exports.handleWebhook = async (req, res) => {
     });
 
     /**
-     * 🔥 PIPELINE
+     * PIPELINE
      */
-    const response = await pipelineIntegration.runPipeline({
+    const runPipeline =
+      pipelineIntegration.runPipeline || pipelineIntegration.run;
+
+    if (typeof runPipeline !== "function") {
+      throw new Error("Pipeline integration function not found");
+    }
+
+    const response = await runPipeline({
       from,
       text,
     });
@@ -96,28 +102,30 @@ exports.handleWebhook = async (req, res) => {
     console.log("📤 Pipeline response:", response);
 
     /**
-     * ✅ SEND RESPONSE
+     * SEND RESPONSE
      */
     if (!response) return;
 
-    response.to = from;
+    const outbound = {
+      ...response,
+      to: from,
+    };
 
-    await whatsappService.sendResponse(response);
+    await whatsappService.sendResponse(outbound);
 
     /**
-     * 🧾 LOG OUTGOING
+     * LOG OUTGOING
      */
     logChat({
       userId: from,
       message: text,
-      response,
+      response: outbound,
     });
-
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
 
     /**
-     * 🚨 LOG ERROR
+     * LOG ERROR
      */
     logError("webhook", error);
   }
