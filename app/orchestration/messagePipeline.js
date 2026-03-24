@@ -1,5 +1,5 @@
 /**
- * FINAL PIPELINE — WEBSITE FLOW + TRACKING + UX FIX
+ * FINAL PIPELINE — SMART SEARCH + WEBSITE FLOW + TRACKING
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -67,54 +67,43 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * SEARCH
+     * ✅ SMART SEARCH (FIXED — WORKS WITHOUT MENU)
      */
-    if (session.mode === "search" && !/^\d+$/.test(input)) {
+    if (!/^\d+$/.test(input)) {
       const results = await shopifyClient.searchProducts(raw);
       const limited = Array.isArray(results) ? results.slice(0, 5) : [];
 
-      sessionMemory.updateSession(from, {
-        lastResults: limited,
-        mode: "search",
-      });
+      if (limited.length) {
+        sessionMemory.updateSession(from, {
+          lastResults: limited,
+          mode: "search",
+        });
 
-      if (!limited.length) {
+        const msg = limited
+          .map((p, i) => {
+            const price = p.variants?.[0]?.price || "";
+            const url = buildProductUrl(p, from);
+
+            return `${i + 1}️⃣ ${p.title}\n💰 Rs ${price}\n🔗 ${url}`;
+          })
+          .join("\n\n");
+
         return {
           type: "text",
           message:
-            "❌ No products found\n\nTry another keyword (e.g. Air Filter)",
+            "🔎 Top Results:\n\n" +
+            msg +
+            "\n\n👉 Tap link to order\n👉 Or reply with number",
         };
       }
-
-      const msg = limited
-        .map((p, i) => {
-          const price = p.variants?.[0]?.price || "";
-          const url = buildProductUrl(p, from);
-
-          return (
-            `${i + 1}️⃣ ${p.title}\n` +
-            `💰 Rs ${price}\n` +
-            `🔗 ${url}`
-          );
-        })
-        .join("\n\n");
-
-      return {
-        type: "text",
-        message:
-          "🔎 Top Results:\n\n" +
-          msg +
-          "\n\n👉 Tap link to order\n👉 Or reply with number for details",
-      };
     }
 
     /**
-     * PRODUCT SELECTION (FIXED)
+     * PRODUCT SELECTION
      */
     if (/^\d+$/.test(input)) {
       const results = session.lastResults || [];
 
-      // ✅ FIX 1: Prevent invalid selection before search
       if (!results.length) {
         return {
           type: "text",
@@ -133,7 +122,7 @@ async function messagePipeline({ from, text }) {
         };
       }
 
-      // ✅ STEP 12: Track click
+      // ✅ Track click
       logClick(from, product);
 
       const price = product.variants?.[0]?.price || "";
@@ -162,7 +151,8 @@ async function messagePipeline({ from, text }) {
     return {
       type: "text",
       message:
-        "🤖 I didn’t understand that.\n\nType *hi* to start again.",
+        "🤖 I didn’t understand that.\n\n" +
+        "Try typing a product name (e.g. Air Filter)",
     };
 
   } catch (err) {
