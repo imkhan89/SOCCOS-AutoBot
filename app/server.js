@@ -1,10 +1,10 @@
 /**
- * SAE-V2 SERVER (FINAL - PRODUCTION HARDENED)
+ * SAE-V2 SERVER (FINAL — STEP 10 ENABLED)
  * --------------------------------
- * Express server with:
- * - Webhook support
- * - Health monitoring
- * - Error handling
+ * ✔ Webhook support
+ * ✔ Health monitoring
+ * ✔ Error handling
+ * ✔ Abandoned cart recovery engine
  */
 
 const express = require("express");
@@ -15,6 +15,9 @@ const webhookRoutes = require("../routes/webhookRoutes");
 
 // Monitoring
 const { getHealthStatus } = require("../services/monitoring/healthMonitor");
+
+// ✅ STEP 10 — Recovery Engine
+const { runAbandonedRecovery } = require("../services/recovery/abandonedCart");
 
 // Initialize app
 const app = express();
@@ -37,7 +40,7 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 
 /**
- * ROOT HEALTH CHECK (REQUIRED FOR HOSTING)
+ * ROOT HEALTH CHECK
  */
 app.get("/", (req, res) => {
   return res.status(200).send("SAE-V2 Server Running");
@@ -55,7 +58,7 @@ app.get("/health", (req, res) => {
 });
 
 /**
- * ADVANCED STATUS (MONITORING)
+ * ADVANCED STATUS
  */
 app.get("/status", (req, res) => {
   return res.status(200).json(getHealthStatus());
@@ -87,6 +90,13 @@ app.use((err, req, res, next) => {
 });
 
 /**
+ * ✅ STEP 10 — RUN RECOVERY ENGINE (EVERY 60s)
+ */
+setInterval(() => {
+  runAbandonedRecovery();
+}, 60 * 1000); // every 1 minute
+
+/**
  * START SERVER
  */
 const PORT = env.app.port || 3000;
@@ -96,5 +106,6 @@ app.listen(PORT, () => {
   console.log("🚀 SAE-V2 SERVER STARTED");
   console.log(`📡 Port: ${PORT}`);
   console.log(`🌐 Mode: ${env.app.nodeEnv}`);
+  console.log("♻️ Recovery Engine: ACTIVE");
   console.log("=================================");
 });
