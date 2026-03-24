@@ -1,5 +1,5 @@
 /**
- * FINAL PIPELINE — SMART SEARCH + WEBSITE FLOW + TRACKING
+ * FINAL PIPELINE — HARDENED + SMART FILTERED SEARCH
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -15,6 +15,22 @@ function buildProductUrl(product, userId) {
   return `https://ndestore.com/products/${product.handle}?utm_source=whatsapp&utm_medium=chat&utm_campaign=conversion&utm_user=${encodeURIComponent(
     userId
   )}`;
+}
+
+/**
+ * 🧠 SIMPLE SEARCH INTENT CHECK
+ */
+function isSearchQuery(input) {
+  if (!input) return false;
+
+  // ignore very short / meaningless inputs
+  if (input.length < 3) return false;
+
+  // ignore menu-like inputs
+  const blocked = ["ok", "okay", "yes", "no", "hi", "hello"];
+  if (blocked.includes(input)) return false;
+
+  return true;
 }
 
 async function messagePipeline({ from, text }) {
@@ -67,10 +83,17 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * ✅ SMART SEARCH (FIXED — WORKS WITHOUT MENU)
+     * ✅ SMART SEARCH (CONTROLLED)
      */
-    if (!/^\d+$/.test(input)) {
-      const results = await shopifyClient.searchProducts(raw);
+    if (isSearchQuery(input) && !/^\d+$/.test(input)) {
+      let results = [];
+
+      try {
+        results = await shopifyClient.searchProducts(raw);
+      } catch (e) {
+        console.error("❌ Shopify search error:", e.message);
+      }
+
       const limited = Array.isArray(results) ? results.slice(0, 5) : [];
 
       if (limited.length) {
@@ -95,6 +118,12 @@ async function messagePipeline({ from, text }) {
             msg +
             "\n\n👉 Tap link to order\n👉 Or reply with number",
         };
+      } else {
+        return {
+          type: "text",
+          message:
+            "❌ No products found\n\nTry another keyword (e.g. Air Filter)",
+        };
       }
     }
 
@@ -112,7 +141,8 @@ async function messagePipeline({ from, text }) {
         };
       }
 
-      const product = results[parseInt(input, 10) - 1];
+      const index = parseInt(input, 10) - 1;
+      const product = results[index];
 
       if (!product) {
         return {
@@ -122,7 +152,6 @@ async function messagePipeline({ from, text }) {
         };
       }
 
-      // ✅ Track click
       logClick(from, product);
 
       const price = product.variants?.[0]?.price || "";
