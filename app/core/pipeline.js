@@ -17,7 +17,7 @@ const middleware = require("../../services/middleware/middleware.integration");
 const { logChat } = require("../../services/logging/chatLogger");
 const { logError } = require("../../services/logging/errorLogger");
 
-module.exports = async function pipeline({ from, text }) {
+async function run({ from, text }) {
   try {
     if (!from || !text) {
       console.warn("⚠️ Missing input:", { from, text });
@@ -114,4 +114,6 @@ module.exports = async function pipeline({ from, text }) {
       message: "System error. Please try again later.",
     };
   }
-};
+}
+
+module.exports = { run };
