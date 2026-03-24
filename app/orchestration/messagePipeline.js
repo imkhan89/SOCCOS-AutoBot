@@ -1,103 +1,175 @@
 /**
- * SOCCOS-AutoBot
- * WhatsApp Service (FINAL — CLEAN + PRODUCTION READY)
+ * FINAL STABLE PIPELINE — FIXED LOOP ISSUE
  */
 
-const formatter = require("../interface/formatters/whatsappFormatter");
-const sender = require("../interface/sender/whatsappSender");
+const shopifyClient = require("../../integrations/shopifyClient");
+const sessionMemory = require("../../data/memory/sessionMemory");
 
-/**
- * SEND TEXT MESSAGE
- */
-async function sendText(to, message) {
+async function messagePipeline({ from, text }) {
   try {
-    if (!to || !message) return null;
+    console.log("🔥 Pipeline triggered", { from, text });
 
-    message = message.toString().trim();
+    if (!from || !text) return null;
 
-    const payload = formatter.formatTextMessage(to, message);
-    if (!payload) return null;
+    text = text.trim().toLowerCase();
 
-    return await sender.send(payload);
+    const session = sessionMemory.getSession(from) || {};
 
-  } catch (error) {
-    console.error("❌ WhatsApp sendText error:", error.message);
-    return null;
+    /**
+     * 🚨 CRITICAL FIX — ORDER HAS ABSOLUTE PRIORITY
+     */
+    if (session.lastSelectedProduct) {
+      return {
+        type: "text",
+        message: await handleOrderFlow(from, text),
+      };
+    }
+
+    /**
+     * ENTRY
+     */
+    if (["hi", "hello", "start"].includes(text)) {
+      sessionMemory.updateSession(from, { mode: "menu" });
+
+      return {
+        type: "text",
+        message:
+          "👋 Welcome\n\n1. Search Products\n2. Support",
+      };
+    }
+
+    /**
+     * MENU
+     */
+    if (session.mode === "menu") {
+      if (text === "1") {
+        sessionMemory.updateSession(from, { mode: "search" });
+
+        return {
+          type: "text",
+          message: "Enter product name",
+        };
+      }
+    }
+
+    /**
+     * SEARCH
+     */
+    if (session.mode === "search" && !/^\d+$/.test(text)) {
+      const results = await shopifyClient.searchProducts(text);
+      const limited = results.slice(0, 5);
+
+      sessionMemory.updateSession(from, {
+        lastResults: limited,
+        mode: "search",
+      });
+
+      const msg = limited
+        .map((p, i) => `${i + 1}. ${p.title}`)
+        .join("\n");
+
+      return {
+        type: "text",
+        message: msg + "\n\nReply with number",
+      };
+    }
+
+    /**
+     * 🚨 SELECTION (ONLY IF NO ORDER STARTED)
+     */
+    if (/^\d+$/.test(text)) {
+      const results = session.lastResults || [];
+      const product = results[parseInt(text) - 1];
+
+      if (!product) {
+        return { type: "text", message: "Invalid selection" };
+      }
+
+      sessionMemory.updateSession(from, {
+        lastSelectedProduct: product,
+      });
+
+      return {
+        type: "image",
+        image: product.image?.src,
+        caption:
+          `🛒 ${product.title}\n\n` +
+          `Reply 0 to continue`,
+      };
+    }
+
+    return { type: "text", message: "Try again" };
+
+  } catch (err) {
+    console.error(err);
+    return { type: "text", message: "Error" };
   }
 }
 
 /**
- * SEND IMAGE MESSAGE (🔥 NEW — REQUIRED FOR CONVERSION)
+ * ORDER FLOW (FIXED)
  */
-async function sendImage(to, imageUrl, caption = "") {
-  try {
-    if (!to || !imageUrl) return null;
+async function handleOrderFlow(userId, text) {
+  const session = sessionMemory.getSession(userId) || {};
+  const order = session.order || {};
+  const product = session.lastSelectedProduct;
 
-    const payload = formatter.formatImageMessage(
-      to,
-      imageUrl,
-      caption
-    );
+  /**
+   * STEP 1 — NAME
+   */
+  if (!order.name) {
+    if (text === "0" || text === "1" || text === "2") {
+      return "Enter your name:";
+    }
 
-    if (!payload) return null;
+    sessionMemory.updateSession(userId, {
+      order: { name: text },
+    });
 
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendImage error:", error.message);
-    return null;
+    return "Enter your address:";
   }
+
+  /**
+   * STEP 2 — ADDRESS
+   */
+  if (!order.address) {
+    sessionMemory.updateSession(userId, {
+      order: { ...order, address: text },
+    });
+
+    return "Confirm order?\n1 Yes\n2 No";
+  }
+
+  /**
+   * STEP 3 — CONFIRM
+   */
+  if (text === "1") {
+    const res = await shopifyClient.createOrder({
+      product,
+      name: order.name,
+      address: order.address,
+    });
+
+    sessionMemory.updateSession(userId, {
+      order: null,
+      lastSelectedProduct: null,
+      mode: "menu",
+    });
+
+    return `✅ Order Confirmed\nID: ${res.id}`;
+  }
+
+  if (text === "2") {
+    sessionMemory.updateSession(userId, {
+      order: null,
+      lastSelectedProduct: null,
+      mode: "menu",
+    });
+
+    return "Order cancelled";
+  }
+
+  return "Enter your name:";
 }
 
-/**
- * SEND BUTTON MESSAGE
- */
-async function sendButtons(to, bodyText, buttons = []) {
-  try {
-    if (!to || !bodyText) return null;
-
-    const payload = formatter.formatButtonMessage(
-      to,
-      bodyText,
-      buttons
-    );
-
-    if (!payload) return null;
-
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendButtons error:", error.message);
-    return null;
-  }
-}
-
-/**
- * SEND LIST MESSAGE
- */
-async function sendList(to, bodyText, sections = []) {
-  try {
-    if (!to || !bodyText) return null;
-
-    const payload = formatter.formatListMessage(
-      to,
-      bodyText,
-      sections
-    );
-
-    if (!payload) return null;
-
-    return await sender.send(payload);
-
-  } catch (error) {
-    console.error("❌ WhatsApp sendList error:", error.message);
-    return null;
-  }
-}
-
-module.exports = {
-  sendText,
-  sendImage,   // ✅ Added
-  sendButtons,
-  sendList,
-};
+module.exports = messagePipeline;
