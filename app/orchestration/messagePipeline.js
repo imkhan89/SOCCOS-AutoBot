@@ -1,15 +1,12 @@
 /**
- * FINAL PIPELINE — STEP 9 (SAFE UPGRADE)
- * ✔ Keeps your working flow intact
- * ✔ Adds upsell + quantity boost
- * ✔ No breaking changes
+ * FINAL PIPELINE — STEP 10 (RECOVERY ENABLED)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
 /**
- * 🧠 SIMPLE SMART UPSELL
+ * 🧠 SMART UPSELL
  */
 function getUpsell(product) {
   const title = (product?.title || "").toLowerCase();
@@ -33,6 +30,24 @@ async function messagePipeline({ from, text }) {
     const input = raw.toLowerCase();
 
     const session = sessionMemory.getSession(from) || {};
+
+    /**
+     * ✅ STEP 10 — RESUME FLOW (CRITICAL)
+     */
+    if (input === "yes") {
+      if (session?.order && session.order.step) {
+        sessionMemory.updateSession(from, {
+          recoverySent: false,
+        });
+
+        return {
+          type: "text",
+          message:
+            "✅ Resuming your order...\n\n" +
+            "Please continue below 👇",
+        };
+      }
+    }
 
     /**
      * ✅ ORDER FLOW PRIORITY
@@ -125,6 +140,7 @@ async function messagePipeline({ from, text }) {
           product,
           upsell,
         },
+        recoverySent: false, // reset recovery
       });
 
       return {
@@ -141,6 +157,7 @@ async function messagePipeline({ from, text }) {
     }
 
     return { type: "text", message: "Try again" };
+
   } catch (err) {
     console.error(err);
     return { type: "text", message: "System error" };
@@ -192,7 +209,7 @@ async function handleOrderFlow(userId, raw, input) {
   }
 
   /**
-   * STEP 1 — QUANTITY UPSELL
+   * STEP 1 — QUANTITY
    */
   if (order.step === "quantity_offer") {
     if (input === "1") {
@@ -266,6 +283,7 @@ async function handleOrderFlow(userId, raw, input) {
       sessionMemory.updateSession(userId, {
         order: null,
         mode: "menu",
+        recoverySent: false,
       });
 
       return `✅ Order Confirmed\nID: ${res.id}`;
@@ -275,6 +293,7 @@ async function handleOrderFlow(userId, raw, input) {
       sessionMemory.updateSession(userId, {
         order: null,
         mode: "menu",
+        recoverySent: false,
       });
 
       return "❌ Cancelled";
