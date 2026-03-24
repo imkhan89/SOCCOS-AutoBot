@@ -1,11 +1,12 @@
 /**
- * Pipeline Integration Layer
+ * Pipeline Integration Layer — FIXED
  */
 
-const pipeline = require("./pipeline");
+const pipeline = require("../orchestration/messagePipeline"); // ✅ FIXED PATH
 
 async function runPipeline(input) {
-  return await pipeline(input);
+  const response = await pipeline(input); // ✅ ensure await
+  return response;
 }
 
 module.exports = {
