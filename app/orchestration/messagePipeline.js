@@ -1,25 +1,20 @@
 /**
- * FINAL PIPELINE — STEP 10 (RECOVERY ENABLED)
+ * STEP 11 — WEBSITE CONVERSION PIPELINE
+ * WhatsApp → Product Discovery → Website Checkout
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
 /**
- * 🧠 SMART UPSELL
+ * Build website product URL with tracking
  */
-function getUpsell(product) {
-  const title = (product?.title || "").toLowerCase();
+function buildProductUrl(product, userId) {
+  if (!product?.handle) return "";
 
-  if (title.includes("air filter")) {
-    return { title: "Oil Filter", price: 850 };
-  }
-
-  if (title.includes("oil filter")) {
-    return { title: "Air Filter", price: 1200 };
-  }
-
-  return { title: "Maintenance Kit", price: 1500 };
+  return `https://ndestore.com/products/${product.handle}?utm_source=whatsapp&utm_medium=chat&utm_campaign=conversion&utm_user=${encodeURIComponent(
+    userId
+  )}`;
 }
 
 async function messagePipeline({ from, text }) {
@@ -32,43 +27,16 @@ async function messagePipeline({ from, text }) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * ✅ STEP 10 — RESUME FLOW (CRITICAL)
-     */
-    if (input === "yes") {
-      if (session?.order && session.order.step) {
-        sessionMemory.updateSession(from, {
-          recoverySent: false,
-        });
-
-        return {
-          type: "text",
-          message:
-            "✅ Resuming your order...\n\n" +
-            "Please continue below 👇",
-        };
-      }
-    }
-
-    /**
-     * ✅ ORDER FLOW PRIORITY
-     */
-    if (session.order && session.order.step) {
-      return {
-        type: "text",
-        message: await handleOrderFlow(from, raw, input),
-      };
-    }
-
-    /**
      * ENTRY
      */
-    if (["hi", "hello", "start"].includes(input)) {
+    if (["hi", "hello", "start", "menu"].includes(input)) {
       sessionMemory.updateSession(from, { mode: "menu" });
 
       return {
         type: "text",
         message:
           "👋 Welcome to Auto Parts Store\n\n" +
+          "🚗 Find genuine auto parts easily\n\n" +
           "1️⃣ Search Products\n" +
           "2️⃣ Support",
       };
@@ -83,7 +51,17 @@ async function messagePipeline({ from, text }) {
 
         return {
           type: "text",
-          message: "🔍 Enter product name",
+          message: "🔍 What are you looking for?",
+        };
+      }
+
+      if (input === "2") {
+        return {
+          type: "text",
+          message:
+            "🛎️ Support\n\n" +
+            "Please type your issue.\n" +
+            "Our team will assist you shortly.",
         };
       }
     }
@@ -93,7 +71,7 @@ async function messagePipeline({ from, text }) {
      */
     if (session.mode === "search" && !/^\d+$/.test(input)) {
       const results = await shopifyClient.searchProducts(raw);
-      const limited = results.slice(0, 5);
+      const limited = Array.isArray(results) ? results.slice(0, 5) : [];
 
       sessionMemory.updateSession(from, {
         lastResults: limited,
@@ -103,206 +81,73 @@ async function messagePipeline({ from, text }) {
       if (!limited.length) {
         return {
           type: "text",
-          message: "❌ No products found",
+          message:
+            "❌ No products found\n\nTry another keyword (e.g. Air Filter)",
         };
       }
 
       const msg = limited
         .map((p, i) => {
           const price = p.variants?.[0]?.price || "";
-          return `${i + 1}️⃣ ${p.title} - Rs ${price}`;
+          const url = buildProductUrl(p, from);
+
+          return (
+            `${i + 1}️⃣ ${p.title}\n` +
+            `💰 Rs ${price}\n` +
+            `🔗 ${url}`
+          );
         })
-        .join("\n");
+        .join("\n\n");
 
       return {
         type: "text",
-        message: `🔎 Top Results:\n\n${msg}\n\nReply with number`,
+        message:
+          "🔎 Top Results:\n\n" +
+          msg +
+          "\n\n👉 Tap link to order\n👉 Or reply with number for details",
       };
     }
 
     /**
-     * PRODUCT SELECTION → UPSSELL
+     * PRODUCT DETAIL
      */
     if (/^\d+$/.test(input)) {
       const results = session.lastResults || [];
-      const product = results[parseInt(input) - 1];
+      const product = results[parseInt(input, 10) - 1];
 
       if (!product) {
         return { type: "text", message: "❌ Invalid selection" };
       }
 
       const price = product.variants?.[0]?.price || "";
-      const upsell = getUpsell(product);
+      const url = buildProductUrl(product, from);
 
       sessionMemory.updateSession(from, {
-        order: {
-          step: "upsell_offer",
-          product,
-          upsell,
-        },
-        recoverySent: false, // reset recovery
+        lastClickedProduct: product,
       });
 
       return {
         type: "text",
         message:
-          `🔥 Great Choice\n\n` +
-          `🛒 ${product.title}\n` +
+          `🔥 ${product.title}\n\n` +
           `💰 Rs ${price}\n\n` +
-          `───────────────\n` +
-          `🔥 Add-on:\n` +
-          `${upsell.title} - Rs ${upsell.price}\n\n` +
-          `1️⃣ Add\n2️⃣ Skip`,
+          `🚀 Order Now:\n${url}\n\n` +
+          `✔ Genuine Product\n` +
+          `✔ Fast Delivery\n` +
+          `✔ Trusted Store\n\n` +
+          `Need help? Just reply 👍`,
       };
     }
 
-    return { type: "text", message: "Try again" };
-
+    return {
+      type: "text",
+      message:
+        "🤖 I didn’t understand that.\n\nType *hi* to start again.",
+    };
   } catch (err) {
     console.error(err);
     return { type: "text", message: "System error" };
   }
-}
-
-/**
- * 🧾 ORDER FLOW
- */
-async function handleOrderFlow(userId, raw, input) {
-  const session = sessionMemory.getSession(userId) || {};
-  const order = session.order;
-
-  if (!order) return null;
-
-  /**
-   * STEP 0 — UPSELL
-   */
-  if (order.step === "upsell_offer") {
-    if (input === "1") {
-      sessionMemory.updateSession(userId, {
-        order: {
-          ...order,
-          upsellSelected: true,
-          step: "quantity_offer",
-        },
-      });
-
-      return (
-        `✅ ${order.upsell.title} added\n\n` +
-        `🔥 Offer: Buy 2 & save Rs 200\n\n` +
-        `1️⃣ Yes\n2️⃣ No`
-      );
-    }
-
-    if (input === "2") {
-      sessionMemory.updateSession(userId, {
-        order: {
-          ...order,
-          upsellSelected: false,
-          step: "awaiting_name",
-        },
-      });
-
-      return "👍 Proceeding\n\nEnter your name:";
-    }
-
-    return "Reply 1 or 2";
-  }
-
-  /**
-   * STEP 1 — QUANTITY
-   */
-  if (order.step === "quantity_offer") {
-    if (input === "1") {
-      sessionMemory.updateSession(userId, {
-        order: {
-          ...order,
-          quantity: 2,
-          step: "awaiting_name",
-        },
-      });
-
-      return "🔥 Discount applied\n\nEnter your name:";
-    }
-
-    if (input === "2") {
-      sessionMemory.updateSession(userId, {
-        order: {
-          ...order,
-          quantity: 1,
-          step: "awaiting_name",
-        },
-      });
-
-      return "👍 Done\n\nEnter your name:";
-    }
-
-    return "Reply 1 or 2";
-  }
-
-  /**
-   * STEP 2 — NAME
-   */
-  if (order.step === "awaiting_name") {
-    sessionMemory.updateSession(userId, {
-      order: { ...order, name: raw, step: "awaiting_address" },
-    });
-
-    return "📍 Enter your address:";
-  }
-
-  /**
-   * STEP 3 — ADDRESS
-   */
-  if (order.step === "awaiting_address") {
-    sessionMemory.updateSession(userId, {
-      order: { ...order, address: raw, step: "confirm_order" },
-    });
-
-    return (
-      "🧾 Order Summary:\n\n" +
-      `Product: ${order.product.title}\n` +
-      (order.upsellSelected
-        ? `Add-on: ${order.upsell.title}\n`
-        : "") +
-      (order.quantity ? `Qty: ${order.quantity}\n` : "") +
-      "\nConfirm:\n\n1️⃣ Yes\n2️⃣ No"
-    );
-  }
-
-  /**
-   * STEP 4 — CONFIRM
-   */
-  if (order.step === "confirm_order") {
-    if (input === "1") {
-      const res = await shopifyClient.createOrder({
-        product: order.product,
-        name: order.name,
-        address: order.address,
-      });
-
-      sessionMemory.updateSession(userId, {
-        order: null,
-        mode: "menu",
-        recoverySent: false,
-      });
-
-      return `✅ Order Confirmed\nID: ${res.id}`;
-    }
-
-    if (input === "2") {
-      sessionMemory.updateSession(userId, {
-        order: null,
-        mode: "menu",
-        recoverySent: false,
-      });
-
-      return "❌ Cancelled";
-    }
-
-    return "Reply 1 or 2";
-  }
-
-  return null;
 }
 
 module.exports = messagePipeline;
