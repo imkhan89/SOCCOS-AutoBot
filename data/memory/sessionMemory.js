@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Session Memory (FINAL - FIXED)
+ * Session Memory (FINAL — STEP 10 READY)
  */
 
 const sessions = {};
@@ -14,6 +14,7 @@ function createDefaultSession() {
     lastQuery: null,
     context: {},
     lastResults: [],
+
     order: {
       step: null,
       product: null,
@@ -21,6 +22,11 @@ function createDefaultSession() {
       address: null,
       isProcessing: false,
     },
+
+    // ✅ NEW (Recovery System)
+    lastActivity: Date.now(),
+    recoverySent: false,
+
     updatedAt: Date.now(),
   };
 }
@@ -39,6 +45,13 @@ function getSession(userId) {
 }
 
 /**
+ * GET ALL SESSIONS (for recovery engine)
+ */
+function getAllSessions() {
+  return sessions;
+}
+
+/**
  * UPDATE SESSION
  */
 function updateSession(userId, data = {}) {
@@ -49,15 +62,28 @@ function updateSession(userId, data = {}) {
   sessions[userId] = {
     ...session,
     ...data,
+
     context: {
       ...session.context,
       ...(data.context || {}),
     },
+
     lastResults: data.lastResults || session.lastResults,
+
     order: {
       ...session.order,
       ...(data.order || {}),
     },
+
+    // ✅ CRITICAL: update activity timestamp
+    lastActivity: Date.now(),
+
+    // preserve recovery flag unless explicitly changed
+    recoverySent:
+      typeof data.recoverySent === "boolean"
+        ? data.recoverySent
+        : session.recoverySent,
+
     updatedAt: Date.now(),
   };
 
@@ -75,6 +101,7 @@ function clearSession(userId) {
 
 module.exports = {
   getSession,
+  getAllSessions, // ✅ NEW
   updateSession,
   clearSession,
 };
