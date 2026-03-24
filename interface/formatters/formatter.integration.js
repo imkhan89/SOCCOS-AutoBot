@@ -1,24 +1,32 @@
 /**
- * SAE-V2 FORMATTER INTEGRATION
+ * SAE-V2 FORMATTER INTEGRATION (FINAL - HARDENED)
  * --------------------------------
- * Bridge between pipeline response → WhatsApp formatter
- * Decides which UI format to use
+ * Bridge between pipeline → WhatsApp formatter
+ * Central UI routing layer
  * NO business logic
  */
 
 const formatter = require("./whatsappFormatter");
 
 /**
- * MAIN FORMATTER ROUTER
+ * FORMAT RESPONSE
  */
 function formatResponse(response) {
   try {
-    if (!response || !response.type) return null;
+    if (!response || typeof response !== "object") {
+      console.warn("⚠️ Invalid response object");
+      return null;
+    }
 
     const { type, to } = response;
 
+    if (!type) {
+      console.warn("⚠️ Missing response type");
+      return null;
+    }
+
     if (!to) {
-      console.warn("⚠️ Missing 'to' in response");
+      console.warn("⚠️ Missing 'to' field");
       return null;
     }
 
@@ -26,7 +34,10 @@ function formatResponse(response) {
      * TEXT
      */
     if (type === "text") {
-      return formatter.formatTextMessage(to, response.message);
+      return formatter.formatTextMessage(
+        to,
+        (response.message || "").toString()
+      );
     }
 
     /**
@@ -35,7 +46,7 @@ function formatResponse(response) {
     if (type === "buttons") {
       return formatter.formatButtonMessage(
         to,
-        response.message,
+        (response.message || "").toString(),
         response.buttons || []
       );
     }
@@ -46,7 +57,7 @@ function formatResponse(response) {
     if (type === "list") {
       return formatter.formatListMessage(
         to,
-        response.message,
+        (response.message || "").toString(),
         response.sections || []
       );
     }
@@ -57,8 +68,8 @@ function formatResponse(response) {
     if (type === "image") {
       return formatter.formatImageMessage(
         to,
-        response.image,
-        response.caption || ""
+        response.image || "",
+        (response.caption || "").toString()
       );
     }
 
