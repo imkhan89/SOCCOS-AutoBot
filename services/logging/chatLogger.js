@@ -1,23 +1,24 @@
 /**
- * SAE-V2 CHAT LOGGER (STEP 12 — TRACKING ENABLED)
- * --------------------------------
- * ✔ Chat logging
- * ✔ Product click tracking
- * ✔ Event tracking
+ * SAE-V2 CHAT LOGGER (FINAL — CLEAN + SAFE)
  */
 
 const logs = [];
 
 /**
- * 🧾 CHAT LOG
+ * 🧾 CHAT LOG (CLEAN)
  */
 function logChat({ userId, message, response }) {
   try {
+    if (!userId || !message) return;
+
     const entry = {
       type: "CHAT",
-      userId,
-      message,
-      response,
+      userId: String(userId).trim(),
+      message: String(message).trim(),
+      response:
+        typeof response === "string"
+          ? response.trim()
+          : response?.message || null,
       timestamp: new Date().toISOString(),
     };
 
@@ -34,6 +35,8 @@ function logChat({ userId, message, response }) {
  */
 function logEvent(event) {
   try {
+    if (!event || typeof event !== "object") return;
+
     const entry = {
       ...event,
       timestamp: new Date().toISOString(),
@@ -48,13 +51,15 @@ function logEvent(event) {
 }
 
 /**
- * 🖱️ PRODUCT CLICK TRACKING (CRITICAL)
+ * 🖱️ PRODUCT CLICK TRACKING
  */
 function logClick(userId, product) {
   try {
+    if (!userId || !product) return;
+
     logEvent({
       type: "PRODUCT_CLICK",
-      userId,
+      userId: String(userId).trim(),
       productId: product?.id || null,
       title: product?.title || null,
       handle: product?.handle || null,
@@ -73,7 +78,7 @@ function getLogs() {
 
 module.exports = {
   logChat,
-  logEvent,   // ✅ NEW
-  logClick,   // ✅ NEW
+  logEvent,
+  logClick,
   getLogs,
 };
