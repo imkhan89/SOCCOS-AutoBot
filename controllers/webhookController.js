@@ -1,8 +1,5 @@
 /**
- * SAE-V2 Webhook Controller (FINAL - HARDENED + LOGGING)
- * --------------------------------
- * Clean entry point
- * Uses pipeline.integration + sendResponse
+ * SAE-V2 Webhook Controller (FINAL — FIXED + CLEAN LOGGING)
  */
 
 const env = require("../config/env");
@@ -39,20 +36,14 @@ exports.verifyWebhook = (req, res) => {
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    // Acknowledge immediately
+    // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
     const message =
       req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-    if (!message) {
-      console.log("⚠️ No message object");
-      return;
-    }
-
-    const from = message.from;
-    if (!from) {
-      console.log("⚠️ No sender");
+    // ✅ FIX 1: Ignore non-message events (NO SPAM)
+    if (!message || !message.from) {
       return;
     }
 
@@ -68,21 +59,12 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      console.log("⚠️ Unsupported message type");
-      return;
+      return; // ignore unsupported silently
     }
 
     text = text.trim();
 
-    console.log("📥 Incoming:", { from, text });
-
-    /**
-     * LOG INCOMING
-     */
-    logChat({
-      userId: from,
-      message: text,
-    });
+    console.log("📥 Incoming:", { from: message.from, text });
 
     /**
      * PIPELINE
@@ -95,32 +77,33 @@ exports.handleWebhook = async (req, res) => {
     }
 
     const response = await runPipeline({
-      from,
+      from: message.from,
       text,
     });
 
     console.log("📤 Pipeline response:", response);
 
+    if (!response) return;
+
     /**
      * SEND RESPONSE
      */
-    if (!response) return;
-
     const outbound = {
       ...response,
-      to: from,
+      to: message.from,
     };
 
     await whatsappService.sendResponse(outbound);
 
     /**
-     * LOG OUTGOING
+     * ✅ FIX 2: SINGLE CLEAN LOG (NO DUPLICATES, NO UNDEFINED)
      */
     logChat({
-      userId: from,
+      userId: message.from,
       message: text,
-      response: outbound,
+      response: response?.message || null,
     });
+
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
 
