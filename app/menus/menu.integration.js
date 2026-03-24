@@ -1,14 +1,14 @@
 /**
- * SAE-V2 MENU INTEGRATION (FINAL)
+ * SAE-V2 MENU INTEGRATION (STEP 6 FINAL)
  * --------------------------------
- * Connects pipeline → menu manager
- * Handles:
- * - Menu navigation
- * - Order flow routing (future-ready)
+ * Connects:
+ * - Pipeline → Menu Manager
+ * - Pipeline → Order Flow
+ * Clean routing layer
  */
 
 const menuManager = require("./menuManager");
-const sessionMemory = require("../../data/memory/sessionMemory");
+const orderFlow = require("./orderFlow");
 
 /**
  * HANDLE MENU
@@ -26,16 +26,11 @@ async function handleMenu(userId, text) {
 }
 
 /**
- * HANDLE ORDER (PLACEHOLDER FOR STEP 6)
+ * HANDLE ORDER FLOW
  */
 async function handleOrder(userId, text) {
   try {
-    const session = sessionMemory.getSession(userId);
-
-    if (!session.order || !session.order.step) return null;
-
-    // Step 6 will implement full order flow
-    return null;
+    return await orderFlow.handleOrder(userId, text);
 
   } catch (error) {
     console.error("❌ Order Integration Error:", error.message);
