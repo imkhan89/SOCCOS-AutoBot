@@ -1,7 +1,7 @@
 /**
  * SOCCOS-AutoBot
- * WhatsApp Sender (FINAL - SAFE & STABLE + INTEGRATED)
- * ---------------------------------------
+ * WhatsApp Sender (FINAL — HARDENED + RELIABLE + INTEGRATED)
+ * ---------------------------------------------------------
  * ONLY:
  * - Sends payload to Meta API
  * - Accepts pipeline response
@@ -12,21 +12,39 @@ const axios = require("axios");
 const env = require("../../config/env");
 const { buildPayload } = require("../formatters/formatter.integration");
 
+// 🔁 RETRY CONFIG
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 1000; // 1 second
+
 /**
- * CORE SEND (LOW LEVEL)
+ * ⏱️ DELAY HELPER
  */
-async function send(payload) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 🔍 VALIDATE ENV CONFIG
+ */
+function isEnvValid() {
+  return (
+    env?.whatsapp?.token &&
+    env?.whatsapp?.phoneNumberId &&
+    env?.whatsapp?.apiVersion
+  );
+}
+
+/**
+ * CORE SEND (LOW LEVEL + RETRY)
+ */
+async function send(payload, attempt = 0) {
   try {
     /**
      * Validate environment
      */
-    if (
-      !env?.whatsapp?.token ||
-      !env?.whatsapp?.phoneNumberId ||
-      !env?.whatsapp?.apiVersion
-    ) {
+    if (!isEnvValid()) {
       console.error("❌ Missing WhatsApp environment config");
-      return;
+      return null;
     }
 
     /**
@@ -34,7 +52,7 @@ async function send(payload) {
      */
     if (!payload || !payload.to) {
       console.error("❌ Invalid payload");
-      return;
+      return null;
     }
 
     const url = `https://graph.facebook.com/${env.whatsapp.apiVersion}/${env.whatsapp.phoneNumberId}/messages`;
@@ -47,30 +65,51 @@ async function send(payload) {
       timeout: 10000,
     });
 
-    console.log("✅ WhatsApp message sent:", payload.to);
+    console.log("✅ WhatsApp message sent:", {
+      to: payload.to,
+      status: response.status,
+    });
 
     return response.data;
 
   } catch (error) {
     const errMsg =
-      error.response?.data ||
-      error.message ||
+      error?.response?.data ||
+      error?.message ||
       "Unknown WhatsApp error";
 
     console.error("❌ WhatsApp Send Error:", errMsg);
+
+    /**
+     * 🔁 RETRY LOGIC
+     */
+    if (attempt < MAX_RETRIES) {
+      console.log(`🔁 Retrying send (${attempt + 1})...`);
+
+      await delay(RETRY_DELAY);
+
+      return send(payload, attempt + 1);
+    }
+
+    /**
+     * 🚨 FINAL FAILURE (SAFE EXIT)
+     */
+    console.error("🚨 Final send failure:", {
+      to: payload?.to,
+    });
 
     return null;
   }
 }
 
 /**
- * HIGH LEVEL SEND (NEW — USED BY PIPELINE)
+ * HIGH LEVEL SEND (USED BY PIPELINE)
  */
 async function sendResponse(to, response) {
   try {
     if (!to || !response) {
       console.warn("⚠️ Missing to/response");
-      return;
+      return null;
     }
 
     /**
@@ -80,7 +119,7 @@ async function sendResponse(to, response) {
 
     if (!payload) {
       console.warn("⚠️ Payload build failed");
-      return;
+      return null;
     }
 
     return await send(payload);
@@ -92,6 +131,6 @@ async function sendResponse(to, response) {
 }
 
 module.exports = {
-  send,          // keep existing (backward compatibility)
-  sendResponse,  // new standard
+  send,          // backward compatibility
+  sendResponse,  // main pipeline method
 };
