@@ -1,5 +1,5 @@
 /**
- * FINAL STABLE PIPELINE — REAL FIX
+ * FINAL STABLE PIPELINE — TEXT ONLY (NO IMAGE)
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -16,7 +16,7 @@ async function messagePipeline({ from, text }) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * ✅ ORDER FLOW ONLY IF ORDER EXISTS
+     * ✅ ORDER FLOW PRIORITY
      */
     if (session.order && session.order.step) {
       return {
@@ -47,7 +47,7 @@ async function messagePipeline({ from, text }) {
 
         return {
           type: "text",
-          message: "Enter product name",
+          message: "🔍 Enter product name",
         };
       }
     }
@@ -65,29 +65,29 @@ async function messagePipeline({ from, text }) {
       });
 
       const msg = limited
-        .map((p, i) => `${i + 1}. ${p.title}`)
+        .map((p, i) => {
+          const price = p.variants?.[0]?.price || "";
+          return `${i + 1}. ${p.title} - Rs ${price}`;
+        })
         .join("\n");
 
       return {
         type: "text",
-        message: msg + "\n\nReply with number",
+        message: `🔎 Products:\n\n${msg}\n\nReply with number`,
       };
     }
 
     /**
-     * ✅ SELECTION (START ORDER PROPERLY)
+     * SELECTION → START ORDER
      */
     if (/^\d+$/.test(text)) {
       const results = session.lastResults || [];
       const product = results[parseInt(text) - 1];
 
       if (!product) {
-        return { type: "text", message: "Invalid selection" };
+        return { type: "text", message: "❌ Invalid selection" };
       }
 
-      /**
-       * 🚨 CRITICAL — SET ORDER STATE HERE
-       */
       sessionMemory.updateSession(from, {
         order: {
           step: "awaiting_continue",
@@ -95,11 +95,14 @@ async function messagePipeline({ from, text }) {
         },
       });
 
+      const price = product.variants?.[0]?.price || "";
+
       return {
-        type: "image",
-        image: product.image?.src,
-        caption:
-          `🛒 ${product.title}\n\nReply 0 to continue`,
+        type: "text",
+        message:
+          `🛒 ${product.title}\n` +
+          `💰 Rs ${price}\n\n` +
+          `Reply 0 to continue`,
       };
     }
 
@@ -107,12 +110,12 @@ async function messagePipeline({ from, text }) {
 
   } catch (err) {
     console.error(err);
-    return { type: "text", message: "Error" };
+    return { type: "text", message: "System error" };
   }
 }
 
 /**
- * ORDER FLOW (STATEFUL — FIXED)
+ * ORDER FLOW
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
@@ -124,7 +127,7 @@ async function handleOrderFlow(userId, text) {
    * STEP 0 — CONTINUE
    */
   if (order.step === "awaiting_continue") {
-    if (text === "0" || text === "1" || text === "2") {
+    if (text === "0") {
       sessionMemory.updateSession(userId, {
         order: { ...order, step: "awaiting_name" },
       });
@@ -182,7 +185,7 @@ async function handleOrderFlow(userId, text) {
         mode: "menu",
       });
 
-      return "Order cancelled";
+      return "❌ Order cancelled";
     }
 
     return "Reply 1 to confirm or 2 to cancel";
