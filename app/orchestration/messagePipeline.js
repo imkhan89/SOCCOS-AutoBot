@@ -1,5 +1,5 @@
 /**
- * FINAL PIPELINE — HARDENED + SMART FILTERED SEARCH
+ * FINAL PIPELINE — HARDENED + SMART FILTERED SEARCH + RATE LIMITED
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -18,16 +18,26 @@ function buildProductUrl(product, userId) {
 }
 
 /**
- * 🧠 SIMPLE SEARCH INTENT CHECK
+ * 🧠 SMART SEARCH INTENT CHECK (IMPROVED)
  */
 function isSearchQuery(input) {
   if (!input) return false;
 
-  // ignore very short / meaningless inputs
+  // ignore very short inputs
   if (input.length < 3) return false;
 
-  // ignore menu-like inputs
-  const blocked = ["ok", "okay", "yes", "no", "hi", "hello"];
+  // block non-search conversational words
+  const blocked = [
+    "ok",
+    "okay",
+    "yes",
+    "no",
+    "hi",
+    "hello",
+    "thanks",
+    "thank you",
+  ];
+
   if (blocked.includes(input)) return false;
 
   return true;
@@ -40,7 +50,31 @@ async function messagePipeline({ from, text }) {
     const raw = text.trim();
     const input = raw.toLowerCase();
 
-    const session = sessionMemory.getSession(from) || {};
+    let session = sessionMemory.getSession(from) || {};
+
+    /**
+     * 🔴 STEP 1 FIX — ALWAYS UPDATE LAST ACTIVITY
+     */
+    sessionMemory.updateSession(from, {
+      lastActivity: Date.now(),
+    });
+
+    /**
+     * 🔴 STEP 3 FIX — SIMPLE RATE LIMIT (ANTI-SPAM)
+     */
+    if (
+      session.lastMessageTime &&
+      Date.now() - session.lastMessageTime < 1000
+    ) {
+      return null;
+    }
+
+    sessionMemory.updateSession(from, {
+      lastMessageTime: Date.now(),
+    });
+
+    // refresh session after update
+    session = sessionMemory.getSession(from) || {};
 
     /**
      * ENTRY
