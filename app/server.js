@@ -1,7 +1,10 @@
 /**
- * SAE-V2 SERVER (FINAL - HARDENED)
+ * SAE-V2 SERVER (FINAL - PRODUCTION HARDENED)
  * --------------------------------
- * Production-ready Express server
+ * Express server with:
+ * - Webhook support
+ * - Health monitoring
+ * - Error handling
  */
 
 const express = require("express");
@@ -10,6 +13,9 @@ const env = require("../config/env");
 // Routes
 const webhookRoutes = require("../routes/webhookRoutes");
 
+// Monitoring
+const { getHealthStatus } = require("../services/monitoring/healthMonitor");
+
 // Initialize app
 const app = express();
 
@@ -17,7 +23,7 @@ const app = express();
  * GLOBAL MIDDLEWARE
  */
 
-// Parse JSON (retain raw body for webhook verification if needed)
+// Parse JSON (retain raw body for webhook verification)
 app.use(
   express.json({
     limit: "10mb",
@@ -27,18 +33,18 @@ app.use(
   })
 );
 
-// Parse URL-encoded
+// Parse URL-encoded data
 app.use(express.urlencoded({ extended: true }));
 
 /**
- * ROOT HEALTH CHECK (IMPORTANT)
+ * ROOT HEALTH CHECK (REQUIRED FOR HOSTING)
  */
 app.get("/", (req, res) => {
   return res.status(200).send("SAE-V2 Server Running");
 });
 
 /**
- * DETAILED HEALTH CHECK
+ * BASIC HEALTH CHECK
  */
 app.get("/health", (req, res) => {
   return res.status(200).json({
@@ -46,6 +52,13 @@ app.get("/health", (req, res) => {
     service: "SAE-V2",
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * ADVANCED STATUS (MONITORING)
+ */
+app.get("/status", (req, res) => {
+  return res.status(200).json(getHealthStatus());
 });
 
 /**
