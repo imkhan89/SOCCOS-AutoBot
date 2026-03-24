@@ -1,5 +1,5 @@
 /**
- * FINAL STABLE PIPELINE — FIXED LOOP ISSUE
+ * FINAL STABLE PIPELINE — REAL FIX
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -16,9 +16,9 @@ async function messagePipeline({ from, text }) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🚨 CRITICAL FIX — ORDER HAS ABSOLUTE PRIORITY
+     * ✅ ORDER FLOW ONLY IF ORDER EXISTS
      */
-    if (session.lastSelectedProduct) {
+    if (session.order && session.order.step) {
       return {
         type: "text",
         message: await handleOrderFlow(from, text),
@@ -75,7 +75,7 @@ async function messagePipeline({ from, text }) {
     }
 
     /**
-     * 🚨 SELECTION (ONLY IF NO ORDER STARTED)
+     * ✅ SELECTION (START ORDER PROPERLY)
      */
     if (/^\d+$/.test(text)) {
       const results = session.lastResults || [];
@@ -85,16 +85,21 @@ async function messagePipeline({ from, text }) {
         return { type: "text", message: "Invalid selection" };
       }
 
+      /**
+       * 🚨 CRITICAL — SET ORDER STATE HERE
+       */
       sessionMemory.updateSession(from, {
-        lastSelectedProduct: product,
+        order: {
+          step: "awaiting_continue",
+          product,
+        },
       });
 
       return {
         type: "image",
         image: product.image?.src,
         caption:
-          `🛒 ${product.title}\n\n` +
-          `Reply 0 to continue`,
+          `🛒 ${product.title}\n\nReply 0 to continue`,
       };
     }
 
@@ -107,23 +112,35 @@ async function messagePipeline({ from, text }) {
 }
 
 /**
- * ORDER FLOW (FIXED)
+ * ORDER FLOW (STATEFUL — FIXED)
  */
 async function handleOrderFlow(userId, text) {
   const session = sessionMemory.getSession(userId) || {};
-  const order = session.order || {};
-  const product = session.lastSelectedProduct;
+  const order = session.order;
+
+  if (!order) return null;
+
+  /**
+   * STEP 0 — CONTINUE
+   */
+  if (order.step === "awaiting_continue") {
+    if (text === "0" || text === "1" || text === "2") {
+      sessionMemory.updateSession(userId, {
+        order: { ...order, step: "awaiting_name" },
+      });
+
+      return "Enter your name:";
+    }
+
+    return "Reply 0 to continue";
+  }
 
   /**
    * STEP 1 — NAME
    */
-  if (!order.name) {
-    if (text === "0" || text === "1" || text === "2") {
-      return "Enter your name:";
-    }
-
+  if (order.step === "awaiting_name") {
     sessionMemory.updateSession(userId, {
-      order: { name: text },
+      order: { ...order, step: "awaiting_address", name: text },
     });
 
     return "Enter your address:";
@@ -132,9 +149,9 @@ async function handleOrderFlow(userId, text) {
   /**
    * STEP 2 — ADDRESS
    */
-  if (!order.address) {
+  if (order.step === "awaiting_address") {
     sessionMemory.updateSession(userId, {
-      order: { ...order, address: text },
+      order: { ...order, step: "confirm_order", address: text },
     });
 
     return "Confirm order?\n1 Yes\n2 No";
@@ -143,33 +160,35 @@ async function handleOrderFlow(userId, text) {
   /**
    * STEP 3 — CONFIRM
    */
-  if (text === "1") {
-    const res = await shopifyClient.createOrder({
-      product,
-      name: order.name,
-      address: order.address,
-    });
+  if (order.step === "confirm_order") {
+    if (text === "1") {
+      const res = await shopifyClient.createOrder({
+        product: order.product,
+        name: order.name,
+        address: order.address,
+      });
 
-    sessionMemory.updateSession(userId, {
-      order: null,
-      lastSelectedProduct: null,
-      mode: "menu",
-    });
+      sessionMemory.updateSession(userId, {
+        order: null,
+        mode: "menu",
+      });
 
-    return `✅ Order Confirmed\nID: ${res.id}`;
+      return `✅ Order Confirmed\nID: ${res.id}`;
+    }
+
+    if (text === "2") {
+      sessionMemory.updateSession(userId, {
+        order: null,
+        mode: "menu",
+      });
+
+      return "Order cancelled";
+    }
+
+    return "Reply 1 to confirm or 2 to cancel";
   }
 
-  if (text === "2") {
-    sessionMemory.updateSession(userId, {
-      order: null,
-      lastSelectedProduct: null,
-      mode: "menu",
-    });
-
-    return "Order cancelled";
-  }
-
-  return "Enter your name:";
+  return null;
 }
 
 module.exports = messagePipeline;
