@@ -1,36 +1,77 @@
 /**
- * FINAL STABLE PIPELINE — TEXT ONLY (NO IMAGE)
- * ✅ FIXED EXPORT
- * ✅ ADDED CONVERSION + UPSSELL (SAFE)
+ * FINAL STABLE PIPELINE — TEXT ONLY
+ * Revenue-optimized, with safe upsell flow
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
 const sessionMemory = require("../../data/memory/sessionMemory");
 
+function isMenuTrigger(text) {
+  return ["hi", "hello", "start", "menu"].includes(text);
+}
+
+function formatPrice(product) {
+  return product?.variants?.[0]?.price || "";
+}
+
+function getUpsellOffer(product) {
+  const title = (product?.title || "").toLowerCase();
+
+  if (title.includes("air filter")) {
+    return {
+      title: "Oil Filter",
+      price: "850",
+      message: "Best paired with this product for better engine protection.",
+    };
+  }
+
+  if (title.includes("oil filter")) {
+    return {
+      title: "Air Filter",
+      price: "850",
+      message: "A useful add-on for better engine performance.",
+    };
+  }
+
+  if (title.includes("cabin filter")) {
+    return {
+      title: "Air Filter",
+      price: "850",
+      message: "A useful add-on for complete filtration support.",
+    };
+  }
+
+  return {
+    title: "Recommended Add-on",
+    price: "850",
+    message: "Popular with this product.",
+  };
+}
+
 async function messagePipeline({ from, text }) {
   try {
     console.log("🔥 Pipeline triggered", { from, text });
 
-    if (!from || !text) return null;
+    if (!from || typeof text !== "string") return null;
 
-    text = text.trim().toLowerCase();
-
+    const rawText = text.trim();
+    const normalized = rawText.toLowerCase();
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * ✅ ORDER FLOW PRIORITY
+     * ORDER FLOW ALWAYS HAS PRIORITY
      */
     if (session.order && session.order.step) {
       return {
         type: "text",
-        message: await handleOrderFlow(from, text),
+        message: await handleOrderFlow(from, rawText, normalized),
       };
     }
 
     /**
      * ENTRY
      */
-    if (["hi", "hello", "start"].includes(text)) {
+    if (isMenuTrigger(normalized)) {
       sessionMemory.updateSession(from, { mode: "menu" });
 
       return {
@@ -46,7 +87,7 @@ async function messagePipeline({ from, text }) {
      * MENU
      */
     if (session.mode === "menu") {
-      if (text === "1") {
+      if (normalized === "1") {
         sessionMemory.updateSession(from, { mode: "search" });
 
         return {
@@ -54,54 +95,72 @@ async function messagePipeline({ from, text }) {
           message: "🔍 Enter product name",
         };
       }
+
+      if (normalized === "2") {
+        return {
+          type: "text",
+          message:
+            "🛎️ Support\n\n" +
+            "Please reply with your issue or question.\n" +
+            "Our team will assist you shortly.",
+        };
+      }
     }
 
     /**
      * SEARCH
      */
-    if (session.mode === "search" && !/^\d+$/.test(text)) {
-      const results = await shopifyClient.searchProducts(text);
-      const limited = results.slice(0, 5);
+    if (session.mode === "search" && !/^\d+$/.test(normalized)) {
+      const results = await shopifyClient.searchProducts(rawText);
+      const limited = Array.isArray(results) ? results.slice(0, 5) : [];
 
       sessionMemory.updateSession(from, {
         lastResults: limited,
         mode: "search",
       });
 
+      if (limited.length === 0) {
+        return {
+          type: "text",
+          message: "❌ No products found. Try another keyword.",
+        };
+      }
+
       const msg = limited
         .map((p, i) => {
-          const price = p.variants?.[0]?.price || "";
+          const price = formatPrice(p);
           return `${i + 1}️⃣ ${p.title} - Rs ${price}`;
         })
         .join("\n");
 
       return {
         type: "text",
-        message:
-          `🔎 Top Results:\n\n${msg}\n\nReply with number`,
+        message: `🔎 Top Results:\n\n${msg}\n\nReply with number`,
       };
     }
 
     /**
-     * SELECTION → START ORDER + UPSSELL
+     * PRODUCT SELECTION
      */
-    if (/^\d+$/.test(text)) {
+    if (/^\d+$/.test(normalized)) {
       const results = session.lastResults || [];
-      const product = results[parseInt(text) - 1];
+      const product = results[parseInt(normalized, 10) - 1];
 
       if (!product) {
         return { type: "text", message: "❌ Invalid selection" };
       }
 
+      const price = formatPrice(product);
+      const upsell = getUpsellOffer(product);
+
       sessionMemory.updateSession(from, {
         order: {
-          step: "awaiting_continue",
+          step: "upsell_offer",
           product,
-          upsellShown: false,
+          upsell,
+          upsellSelected: false,
         },
       });
-
-      const price = product.variants?.[0]?.price || "";
 
       return {
         type: "text",
@@ -110,8 +169,14 @@ async function messagePipeline({ from, text }) {
           `🛒 ${product.title}\n` +
           `💰 Rs ${price}\n\n` +
           `✔ Original Product\n` +
-          `✔ Fast Delivery\n\n` +
-          `Reply 0 to continue`,
+          `✔ Fast Delivery\n` +
+          `✔ Cash on Delivery\n\n` +
+          `───────────────\n` +
+          `🔥 Recommended Add-on:\n` +
+          `${upsell.title} - Rs ${upsell.price}\n` +
+          `${upsell.message}\n\n` +
+          `1️⃣ Add to order\n` +
+          `2️⃣ Skip`,
       };
     }
 
@@ -125,25 +190,41 @@ async function messagePipeline({ from, text }) {
 /**
  * ORDER FLOW
  */
-async function handleOrderFlow(userId, text) {
+async function handleOrderFlow(userId, rawText, normalizedText) {
   const session = sessionMemory.getSession(userId) || {};
   const order = session.order;
 
   if (!order) return null;
 
   /**
-   * STEP 0 — CONTINUE
+   * STEP 0 — UPSELL
    */
-  if (order.step === "awaiting_continue") {
-    if (text === "0") {
+  if (order.step === "upsell_offer") {
+    if (normalizedText === "1") {
       sessionMemory.updateSession(userId, {
-        order: { ...order, step: "awaiting_name" },
+        order: {
+          ...order,
+          upsellSelected: true,
+          step: "awaiting_name",
+        },
       });
 
-      return "You're 1 step away ✅\n\nEnter your name:";
+      return "✅ Add-on added!\n\nEnter your name:";
     }
 
-    return "Reply 0 to continue";
+    if (normalizedText === "2") {
+      sessionMemory.updateSession(userId, {
+        order: {
+          ...order,
+          upsellSelected: false,
+          step: "awaiting_name",
+        },
+      });
+
+      return "👍 No problem\n\nEnter your name:";
+    }
+
+    return "Reply 1 to add or 2 to skip";
   }
 
   /**
@@ -151,10 +232,18 @@ async function handleOrderFlow(userId, text) {
    */
   if (order.step === "awaiting_name") {
     sessionMemory.updateSession(userId, {
-      order: { ...order, step: "awaiting_address", name: text },
+      order: {
+        ...order,
+        step: "awaiting_address",
+        name: rawText.trim(),
+      },
     });
 
-    return "📍 Enter your address (City + Area):";
+    return (
+      "📍 Enter your address (City + Area)\n\n" +
+      "We deliver all over Pakistan 🇵🇰\n" +
+      "Cash on Delivery available"
+    );
   }
 
   /**
@@ -162,13 +251,23 @@ async function handleOrderFlow(userId, text) {
    */
   if (order.step === "awaiting_address") {
     sessionMemory.updateSession(userId, {
-      order: { ...order, step: "confirm_order", address: text },
+      order: {
+        ...order,
+        step: "confirm_order",
+        address: rawText.trim(),
+      },
     });
 
     return (
-      "Confirm your order:\n\n" +
+      "🧾 Order Summary:\n\n" +
+      `Product: ${order.product?.title || "-" }\n` +
+      `${order.upsellSelected ? `Add-on: ${order.upsell?.title || "Included"}\n` : ""}` +
+      "\n───────────────\n" +
+      "✔ Original Product\n" +
+      "✔ Quality Checked\n" +
       "✔ Cash on Delivery\n" +
       "✔ 2–4 Days Delivery\n\n" +
+      "Confirm your order:\n\n" +
       "1️⃣ Yes\n2️⃣ No"
     );
   }
@@ -177,7 +276,7 @@ async function handleOrderFlow(userId, text) {
    * STEP 3 — CONFIRM
    */
   if (order.step === "confirm_order") {
-    if (text === "1") {
+    if (normalizedText === "1") {
       const res = await shopifyClient.createOrder({
         product: order.product,
         name: order.name,
@@ -187,20 +286,22 @@ async function handleOrderFlow(userId, text) {
       sessionMemory.updateSession(userId, {
         order: null,
         mode: "menu",
+        lastResults: session.lastResults || [],
       });
 
       return (
-        `✅ Order Confirmed\n` +
-        `🆔 ID: ${res.id}\n\n` +
-        `Our team may contact you.\n` +
-        `Delivery: 2–4 days 🚚`
+        "✅ Order Confirmed\n\n" +
+        `🆔 ID: ${res?.id || "N/A"}\n\n` +
+        "Our team may contact you.\n" +
+        "Delivery: 2–4 days 🚚"
       );
     }
 
-    if (text === "2") {
+    if (normalizedText === "2") {
       sessionMemory.updateSession(userId, {
         order: null,
         mode: "menu",
+        lastResults: session.lastResults || [],
       });
 
       return "❌ Order cancelled";
@@ -212,7 +313,4 @@ async function handleOrderFlow(userId, text) {
   return null;
 }
 
-/**
- * ✅ CRITICAL FIX (YOUR ERROR)
- */
 module.exports = messagePipeline;
