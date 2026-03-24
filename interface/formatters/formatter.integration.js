@@ -1,80 +1,100 @@
 /**
- * SAE-V2 FORMATTER INTEGRATION (FINAL - HARDENED)
+ * SAE-V2 FORMATTER INTEGRATION (FINAL - HARDENED + UX LAYER)
  * --------------------------------
- * Bridge between pipeline → WhatsApp formatter
- * Central UI routing layer
+ * Bridge between pipeline → UX formatter → WhatsApp payload
  * NO business logic
  */
 
 const formatter = require("./whatsappFormatter");
 
 /**
- * FORMAT RESPONSE
+ * BUILD PAYLOAD (NEW STANDARD)
  */
-function formatResponse(response) {
+function buildPayload(to, response) {
   try {
-    if (!response || typeof response !== "object") {
-      console.warn("⚠️ Invalid response object");
+    if (!response || !to) {
+      console.warn("⚠️ Missing response or recipient");
       return null;
     }
 
-    const { type, to } = response;
-
-    if (!type) {
-      console.warn("⚠️ Missing response type");
-      return null;
-    }
-
-    if (!to) {
-      console.warn("⚠️ Missing 'to' field");
-      return null;
-    }
+    const { type } = response;
 
     /**
-     * TEXT
+     * DEFAULT = TEXT
      */
-    if (type === "text") {
-      return formatter.formatTextMessage(
-        to,
-        (response.message || "").toString()
-      );
+    if (!type || type === "text") {
+      const text = formatter.formatSimpleText(response.message);
+      return formatter.formatTextMessage(to, text);
     }
 
     /**
-     * BUTTONS
+     * MENU (UX)
+     */
+    if (type === "menu") {
+      const text = formatter.formatMenuText(
+        response.title,
+        response.options
+      );
+      return formatter.formatTextMessage(to, text);
+    }
+
+    /**
+     * PRODUCTS (UX)
+     */
+    if (type === "products") {
+      const text = formatter.formatProductText(response.products);
+      return formatter.formatTextMessage(to, text);
+    }
+
+    /**
+     * ORDER (UX)
+     */
+    if (type === "order") {
+      const text = formatter.formatOrderText(
+        response.product,
+        response.price
+      );
+      return formatter.formatTextMessage(to, text);
+    }
+
+    /**
+     * BUTTONS (LOW LEVEL)
      */
     if (type === "buttons") {
       return formatter.formatButtonMessage(
         to,
-        (response.message || "").toString(),
+        formatter.formatSimpleText(response.message),
         response.buttons || []
       );
     }
 
     /**
-     * LIST
+     * LIST (LOW LEVEL)
      */
     if (type === "list") {
       return formatter.formatListMessage(
         to,
-        (response.message || "").toString(),
+        formatter.formatSimpleText(response.message),
         response.sections || []
       );
     }
 
     /**
-     * IMAGE
+     * IMAGE (LOW LEVEL)
      */
     if (type === "image") {
       return formatter.formatImageMessage(
         to,
         response.image || "",
-        (response.caption || "").toString()
+        formatter.formatSimpleText(response.caption)
       );
     }
 
-    console.warn("⚠️ Unknown response type:", type);
-    return null;
+    /**
+     * FALLBACK
+     */
+    const fallbackText = formatter.formatSimpleText(response.message);
+    return formatter.formatTextMessage(to, fallbackText);
 
   } catch (error) {
     console.error("❌ Formatter Integration Error:", error.message);
@@ -82,6 +102,19 @@ function formatResponse(response) {
   }
 }
 
+/**
+ * BACKWARD COMPATIBILITY (IMPORTANT)
+ */
+function formatResponse(response) {
+  if (!response || !response.to) {
+    console.warn("⚠️ formatResponse requires response.to");
+    return null;
+  }
+
+  return buildPayload(response.to, response);
+}
+
 module.exports = {
+  buildPayload,
   formatResponse,
 };
