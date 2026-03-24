@@ -1,5 +1,5 @@
 /**
- * SAE-V2 Webhook Controller (FINAL — HARDENED)
+ * SAE-V2 Webhook Controller (FINAL — PRODUCTION SAFE)
  */
 
 const env = require("../config/env");
@@ -39,24 +39,16 @@ exports.handleWebhook = async (req, res) => {
     // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
-    const value =
-      req.body?.entry?.[0]?.changes?.[0]?.value;
-
+    const value = req.body?.entry?.[0]?.changes?.[0]?.value;
     const message = value?.messages?.[0];
 
     /**
-     * ✅ STRICT FILTER (REMOVES ALL NOISE)
-     * Ignore:
-     * - status updates
-     * - delivery receipts
-     * - empty payloads
+     * ✅ STRICT FILTER (NO NOISE)
      */
-    if (!message || !message.from) {
-      return;
-    }
+    if (!message || !message.from) return;
 
     /**
-     * ✅ ONLY PROCESS VALID MESSAGE TYPES
+     * ✅ EXTRACT TEXT SAFELY
      */
     let text = "";
 
@@ -67,18 +59,18 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ignore everything else silently
+      return; // ignore unsupported types silently
     }
 
-    text = text.trim();
-    const from = message.from;
+    text = String(text).trim();
+    const from = String(message.from).trim();
 
     if (!text) return;
 
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * PIPELINE
+     * ✅ PIPELINE SAFE EXECUTION
      */
     const runPipeline =
       pipelineIntegration.runPipeline || pipelineIntegration.run;
@@ -87,29 +79,48 @@ exports.handleWebhook = async (req, res) => {
       throw new Error("Pipeline function not found");
     }
 
-    const response = await runPipeline({ from, text });
+    let response = null;
+
+    try {
+      response = await runPipeline({ from, text });
+    } catch (pipelineError) {
+      console.error("❌ Pipeline Error:", pipelineError.message);
+      response = {
+        type: "text",
+        message: "⚠️ Temporary issue. Please try again.",
+      };
+    }
 
     console.log("📤 Pipeline response:", response);
 
-    if (!response || !response.type) return;
+    /**
+     * ✅ VALIDATE RESPONSE
+     */
+    if (!response || !response.type || !response.message) return;
 
     /**
-     * SEND RESPONSE
+     * ✅ SEND RESPONSE SAFELY
      */
     const outbound = {
-      ...response,
+      type: response.type,
+      message: String(response.message),
       to: from,
     };
 
-    await whatsappService.sendResponse(outbound);
+    try {
+      await whatsappService.sendResponse(outbound);
+      console.log("✅ WhatsApp message sent:", from);
+    } catch (sendError) {
+      console.error("❌ Send Error:", sendError.message);
+    }
 
     /**
-     * ✅ SINGLE CLEAN LOG (AFTER RESPONSE)
+     * ✅ CLEAN LOGGING (NO UNDEFINED)
      */
     logChat({
       userId: from,
       message: text,
-      response: response.message || null,
+      response: outbound.message,
     });
 
   } catch (error) {
