@@ -1,8 +1,21 @@
 /**
- * SAE-V2 CHAT LOGGER (FINAL — CLEAN + SAFE)
+ * SAE-V2 CHAT LOGGER (FINAL — CLEAN + SAFE + MEMORY PROTECTED)
  */
 
+const MAX_LOGS = 1000;
 const logs = [];
+
+/**
+ * 🔒 SAFE PUSH (PREVENT MEMORY LEAK)
+ */
+function safePush(entry) {
+  logs.push(entry);
+
+  // ✅ prevent memory overflow
+  if (logs.length > MAX_LOGS) {
+    logs.shift();
+  }
+}
 
 /**
  * 🧾 CHAT LOG (CLEAN)
@@ -22,7 +35,7 @@ function logChat({ userId, message, response }) {
       timestamp: new Date().toISOString(),
     };
 
-    logs.push(entry);
+    safePush(entry);
 
     console.log("📘 Chat Log:", entry);
   } catch (error) {
@@ -42,7 +55,7 @@ function logEvent(event) {
       timestamp: new Date().toISOString(),
     };
 
-    logs.push(entry);
+    safePush(entry);
 
     console.log("📊 Event:", entry);
   } catch (error) {
