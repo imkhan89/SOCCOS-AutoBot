@@ -1,5 +1,5 @@
 /**
- * SAE-V2 Webhook Controller (FINAL — FIXED + CLEAN LOGGING)
+ * SAE-V2 Webhook Controller (FINAL — HARDENED)
  */
 
 const env = require("../config/env");
@@ -39,19 +39,27 @@ exports.handleWebhook = async (req, res) => {
     // ✅ Always acknowledge immediately
     res.sendStatus(200);
 
-    const message =
-      req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+    const value =
+      req.body?.entry?.[0]?.changes?.[0]?.value;
 
-    // ✅ FIX 1: Ignore non-message events (NO SPAM)
+    const message = value?.messages?.[0];
+
+    /**
+     * ✅ STRICT FILTER (REMOVES ALL NOISE)
+     * Ignore:
+     * - status updates
+     * - delivery receipts
+     * - empty payloads
+     */
     if (!message || !message.from) {
       return;
     }
 
+    /**
+     * ✅ ONLY PROCESS VALID MESSAGE TYPES
+     */
     let text = "";
 
-    /**
-     * SUPPORT ALL TYPES
-     */
     if (message.text?.body) {
       text = message.text.body;
     } else if (message.button?.text) {
@@ -59,12 +67,15 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ignore unsupported silently
+      return; // ignore everything else silently
     }
 
     text = text.trim();
+    const from = message.from;
 
-    console.log("📥 Incoming:", { from: message.from, text });
+    if (!text) return;
+
+    console.log("📥 Incoming:", { from, text });
 
     /**
      * PIPELINE
@@ -73,43 +84,37 @@ exports.handleWebhook = async (req, res) => {
       pipelineIntegration.runPipeline || pipelineIntegration.run;
 
     if (typeof runPipeline !== "function") {
-      throw new Error("Pipeline integration function not found");
+      throw new Error("Pipeline function not found");
     }
 
-    const response = await runPipeline({
-      from: message.from,
-      text,
-    });
+    const response = await runPipeline({ from, text });
 
     console.log("📤 Pipeline response:", response);
 
-    if (!response) return;
+    if (!response || !response.type) return;
 
     /**
      * SEND RESPONSE
      */
     const outbound = {
       ...response,
-      to: message.from,
+      to: from,
     };
 
     await whatsappService.sendResponse(outbound);
 
     /**
-     * ✅ FIX 2: SINGLE CLEAN LOG (NO DUPLICATES, NO UNDEFINED)
+     * ✅ SINGLE CLEAN LOG (AFTER RESPONSE)
      */
     logChat({
-      userId: message.from,
+      userId: from,
       message: text,
-      response: response?.message || null,
+      response: response.message || null,
     });
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
 
-    /**
-     * LOG ERROR
-     */
     logError("webhook", error);
   }
 };
