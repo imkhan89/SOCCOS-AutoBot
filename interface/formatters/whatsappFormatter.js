@@ -1,6 +1,14 @@
 /**
- * SAE-V2 WHATSAPP FORMATTER (FINAL - PRODUCTION SAFE)
- * Pure UI Layer — NO business logic
+ * SAE-V2 WHATSAPP FORMATTER (FINAL - PRODUCTION SAFE + UX LAYER)
+ * --------------------------------
+ * LOW LEVEL = Meta payload formatting
+ * HIGH LEVEL = UX formatting (text structure)
+ */
+
+/**
+ * =========================
+ * LOW LEVEL (EXISTING)
+ * =========================
  */
 
 /**
@@ -90,9 +98,86 @@ function formatImageMessage(to, imageUrl, caption = "") {
   };
 }
 
+/**
+ * =========================
+ * HIGH LEVEL (NEW UX LAYER)
+ * =========================
+ */
+
+function cleanText(text) {
+  return (text || "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * MENU FORMAT
+ */
+function formatMenuText(title, options = []) {
+  let msg = `📋 *${title}*\n\n`;
+
+  options.forEach((opt, i) => {
+    msg += `${i + 1}. ${opt}\n`;
+  });
+
+  msg += `\n_Reply with number_`;
+
+  return cleanText(msg);
+}
+
+/**
+ * PRODUCT LIST FORMAT
+ */
+function formatProductText(products = []) {
+  if (!products.length) return "❌ No products found";
+
+  let msg = "🔎 *Available Products:*\n\n";
+
+  products.forEach((p, i) => {
+    const price = p.price || p.variants?.[0]?.price || "";
+    msg += `${i + 1}. *${p.title}*\n💰 Rs ${price}\n\n`;
+  });
+
+  msg += "_Reply with product number_";
+
+  return cleanText(msg);
+}
+
+/**
+ * ORDER SUMMARY FORMAT
+ */
+function formatOrderText(product, price) {
+  return cleanText(
+    `🛒 *Order Summary*\n\n` +
+    `📦 ${product}\n` +
+    `💰 Rs ${price}\n\n` +
+    `_Reply 0 to continue_`
+  );
+}
+
+/**
+ * SIMPLE TEXT FORMAT
+ */
+function formatSimpleText(text) {
+  return cleanText(text);
+}
+
+/**
+ * =========================
+ * EXPORTS
+ * =========================
+ */
+
 module.exports = {
+  // LOW LEVEL (Meta API)
   formatTextMessage,
   formatButtonMessage,
   formatListMessage,
   formatImageMessage,
+
+  // HIGH LEVEL (UX)
+  formatMenuText,
+  formatProductText,
+  formatOrderText,
+  formatSimpleText,
 };
