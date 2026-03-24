@@ -1,5 +1,5 @@
 /**
- * SAE-V2 Webhook Controller (FINAL - REFACTORED)
+ * SAE-V2 Webhook Controller (FINAL - HARDENED + LOGGING)
  * --------------------------------
  * Clean entry point
  * Uses pipeline.integration + sendResponse
@@ -8,6 +8,10 @@
 const env = require("../config/env");
 const pipelineIntegration = require("../app/core/pipeline.integration");
 const whatsappService = require("../services/whatsappService");
+
+// Logging
+const { logChat } = require("../services/logging/chatLogger");
+const { logError } = require("../services/logging/errorLogger");
 
 /**
  * GET /webhook (Verification)
@@ -74,7 +78,15 @@ exports.handleWebhook = async (req, res) => {
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * 🔥 PIPELINE (NEW CORE)
+     * 🧾 LOG INCOMING
+     */
+    logChat({
+      userId: from,
+      message: text,
+    });
+
+    /**
+     * 🔥 PIPELINE
      */
     const response = await pipelineIntegration.runPipeline({
       from,
@@ -84,7 +96,7 @@ exports.handleWebhook = async (req, res) => {
     console.log("📤 Pipeline response:", response);
 
     /**
-     * ✅ SEND RESPONSE (NEW FLOW)
+     * ✅ SEND RESPONSE
      */
     if (!response) return;
 
@@ -92,7 +104,21 @@ exports.handleWebhook = async (req, res) => {
 
     await whatsappService.sendResponse(response);
 
+    /**
+     * 🧾 LOG OUTGOING
+     */
+    logChat({
+      userId: from,
+      message: text,
+      response,
+    });
+
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
+
+    /**
+     * 🚨 LOG ERROR
+     */
+    logError("webhook", error);
   }
 };
