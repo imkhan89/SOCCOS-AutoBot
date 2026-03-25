@@ -17,6 +17,10 @@ const recoveryReminder = require("../../interface/ui/recovery/recoveryReminder")
 const fallbackMessage = require("../../interface/ui/error/fallbackMessage");
 const invalidInput = require("../../interface/ui/error/invalidInput");
 
+// ✅ REAL SERVICES (REPLACED MOCKS)
+const { search } = require("../../services/search/productSearch");
+const { getProduct } = require("../../services/product/getProduct");
+
 // State Manager
 const {
   getState,
@@ -28,9 +32,10 @@ const {
 /**
  * Main Flow Builder
  */
-function buildFlow(userId, intent = {}) {
+async function buildFlow(userId, intent = {}, context = {}) {
   try {
     const { type, payload = {} } = intent;
+    const { cleanedMessage } = context;
 
     getState(userId); // ensure state exists
 
@@ -48,14 +53,22 @@ function buildFlow(userId, intent = {}) {
 
       // ---------------- SEARCH ----------------
       case "search": {
-        const query = payload.query;
+        // ✅ PRIORITY: payload → fallback → cleanedMessage
+        const query =
+          payload.query ||
+          cleanedMessage ||
+          "";
+
+        if (!query || query.length < 2) {
+          return emptyResults("Please type a product name");
+        }
 
         setQuery(userId, query);
         setScreen(userId, "search_results");
 
-        const results = mockSearch(query);
+        const results = await search({ query });
 
-        if (!results.length) {
+        if (!results || !results.length) {
           return emptyResults(query);
         }
 
@@ -66,7 +79,7 @@ function buildFlow(userId, intent = {}) {
       case "view_product": {
         const productId = payload.productId;
 
-        const product = mockProduct(productId);
+        const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -79,7 +92,7 @@ function buildFlow(userId, intent = {}) {
       case "product_details": {
         const productId = payload.productId;
 
-        const product = mockProduct(productId);
+        const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -92,7 +105,7 @@ function buildFlow(userId, intent = {}) {
       case "order_product": {
         const productId = payload.productId;
 
-        const product = mockProduct(productId);
+        const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -131,32 +144,6 @@ function buildFlow(userId, intent = {}) {
   } catch (error) {
     return fallbackMessage();
   }
-}
-
-// ---------------- MOCK DATA (TEMPORARY) ----------------
-
-function mockSearch(query) {
-  if (!query) return [];
-
-  return [
-    { id: "101", name: "Suzuki Mehran Air Filter", price: 1200, stock: 5 },
-    { id: "102", name: "Suzuki Alto Oil Filter", price: 900, stock: 3 },
-    { id: "103", name: "Honda Civic Cabin Filter", price: 1800, stock: 2 }
-  ];
-}
-
-function mockProduct(id) {
-  if (!id) return null;
-
-  return {
-    id,
-    name: "Sample Auto Part",
-    price: 1500,
-    originalPrice: 2000,
-    discount: 25,
-    stock: 3,
-    description: "High quality genuine auto part with perfect fit."
-  };
 }
 
 module.exports = {
