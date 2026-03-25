@@ -1,11 +1,14 @@
 /**
- * SAE-V2 Webhook Controller (FINAL — HARDENED + PRODUCTION SAFE)
+ * CLEAN WEBHOOK CONTROLLER — PRODUCTION SAFE
+ * Role: Validate → Deduplicate → Forward → Send Response
  */
 
 const env = require("../config/env");
-const pipelineIntegration = require("../app/core/pipeline.integration");
 
-// ✅ Use correct sender (Step 7 aligned)
+// ✅ NEW CLEAN PIPELINE
+const messagePipeline = require("../app/orchestration/messagePipeline");
+
+// ✅ SINGLE SENDER
 const whatsappSender = require("../interface/sender/whatsappSender");
 
 // Logging
@@ -13,7 +16,7 @@ const { logChat } = require("../services/logging/chatLogger");
 const { logError } = require("../services/logging/errorLogger");
 
 /**
- * 🧠 Deduplication cache (in-memory)
+ * 🧠 Deduplication cache
  */
 const processedMessages = new Set();
 const MAX_CACHE = 1000;
@@ -40,7 +43,7 @@ exports.verifyWebhook = (req, res) => {
 };
 
 /**
- * 🧹 Maintain deduplication cache size
+ * 🧹 Maintain deduplication cache
  */
 function maintainCache() {
   if (processedMessages.size > MAX_CACHE) {
@@ -54,24 +57,22 @@ function maintainCache() {
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    // ✅ Always acknowledge immediately
+    // ✅ ALWAYS ACK FIRST (CRITICAL FOR WHATSAPP)
     res.sendStatus(200);
 
     const value = req.body?.entry?.[0]?.changes?.[0]?.value;
     const message = value?.messages?.[0];
 
     /**
-     * ✅ STRICT FILTER (NO NOISE)
+     * ✅ STRICT FILTER
      */
     if (!message || !message.from) return;
 
     /**
-     * 🔴 DUPLICATE PROTECTION (CRITICAL)
+     * 🔴 DUPLICATE PROTECTION
      */
     const messageId = message.id;
-    if (messageId && processedMessages.has(messageId)) {
-      return;
-    }
+    if (messageId && processedMessages.has(messageId)) return;
 
     if (messageId) {
       processedMessages.add(messageId);
@@ -79,7 +80,7 @@ exports.handleWebhook = async (req, res) => {
     }
 
     /**
-     * ✅ EXTRACT TEXT SAFELY
+     * ✅ SAFE TEXT EXTRACTION
      */
     let text = "";
 
@@ -90,7 +91,7 @@ exports.handleWebhook = async (req, res) => {
     } else if (message.interactive?.button_reply?.title) {
       text = message.interactive.button_reply.title;
     } else {
-      return; // ignore unsupported types
+      return;
     }
 
     text = String(text).trim();
@@ -101,19 +102,12 @@ exports.handleWebhook = async (req, res) => {
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * ✅ PIPELINE SAFE EXECUTION
+     * ✅ CLEAN PIPELINE CALL
      */
-    const runPipeline =
-      pipelineIntegration.runPipeline || pipelineIntegration.run;
-
-    if (typeof runPipeline !== "function") {
-      throw new Error("Pipeline function not found");
-    }
-
     let response = null;
 
     try {
-      response = await runPipeline({ from, text });
+      response = await messagePipeline({ from, text });
     } catch (pipelineError) {
       console.error("❌ Pipeline Error:", pipelineError.message);
 
@@ -131,17 +125,17 @@ exports.handleWebhook = async (req, res) => {
     if (!response || !response.type || !response.message) return;
 
     /**
-     * ✅ SEND RESPONSE (Step 7 aligned)
+     * ✅ SINGLE SENDER
      */
     try {
       await whatsappSender.sendResponse(from, response);
-      console.log("✅ WhatsApp message sent:", from);
+      console.log("✅ Message sent:", from);
     } catch (sendError) {
       console.error("❌ Send Error:", sendError.message);
     }
 
     /**
-     * ✅ CLEAN LOGGING
+     * ✅ LOGGING
      */
     logChat({
       userId: from,
