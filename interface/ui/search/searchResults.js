@@ -1,15 +1,11 @@
 /**
- * SEARCH RESULTS UI — FINAL (WHATSAPP SAFE)
- * ----------------------------------------
- * - Uses LIST instead of buttons
- * - Supports up to 10 products
- * - Prevents send errors
+ * SEARCH RESULTS UI — FINAL FIXED (PRODUCTION SAFE)
  */
 
 function searchResults({ query = "", results = [] } = {}) {
   if (!Array.isArray(results)) results = [];
 
-  const topResults = results.slice(0, 10); // ✅ WhatsApp safe limit
+  const topResults = results.slice(0, 10);
 
   /**
    * ❌ NO RESULTS
@@ -27,16 +23,32 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ BUILD LIST ROWS
+   * ✅ BUILD SAFE ROWS (CRITICAL FIX)
    */
-  const rows = topResults.map((product) => ({
-    id: `view_${product.id}`,
-    title: truncate(product.title || product.name || "Product"),
-    description: `PKR ${product.price || 0}`
-  }));
+  const rows = topResults
+    .map((product, index) => {
+      const safeId = sanitizeId(product.id, index);
+
+      return {
+        id: `view_${safeId}`, // ✅ ALWAYS SAFE
+        title: truncate(product.title || product.name || "Product"),
+        description: formatPrice(product.price)
+      };
+    })
+    .filter(row => row.id); // extra safety
 
   /**
-   * ✅ RETURN WHATSAPP LIST
+   * ⚠️ FAILSAFE
+   */
+  if (!rows.length) {
+    return {
+      type: "text",
+      message: "⚠️ Unable to display products. Please try again."
+    };
+  }
+
+  /**
+   * ✅ RETURN LIST
    */
   return {
     type: "list",
@@ -59,7 +71,30 @@ function searchResults({ query = "", results = [] } = {}) {
 }
 
 /**
- * ✂️ TEXT TRUNCATION
+ * 🔒 SANITIZE ID (CRITICAL FIX)
+ */
+function sanitizeId(id, fallbackIndex) {
+  if (!id) return `fallback_${fallbackIndex}`;
+
+  // Handle Shopify GID
+  if (typeof id === "string" && id.includes("gid://")) {
+    const parts = id.split("/");
+    return parts[parts.length - 1];
+  }
+
+  return String(id);
+}
+
+/**
+ * 💰 FORMAT PRICE
+ */
+function formatPrice(price) {
+  const num = Number(price) || 0;
+  return `PKR ${num}`;
+}
+
+/**
+ * ✂️ TRUNCATE
  */
 function truncate(text = "", limit = 24) {
   if (text.length <= limit) return text;
