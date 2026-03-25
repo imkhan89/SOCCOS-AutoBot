@@ -1,15 +1,12 @@
 /**
  * CLEAN WEBHOOK CONTROLLER — PRODUCTION SAFE
- * Role: Validate → Deduplicate → Forward → Send Response
+ * Role: Validate → Deduplicate → Forward ONLY
  */
 
 const env = require("../config/env");
 
-// ✅ NEW CLEAN PIPELINE
+// ✅ PIPELINE (handles EVERYTHING including sending)
 const messagePipeline = require("../app/orchestration/messagePipeline");
-
-// ✅ SINGLE SENDER
-const whatsappSender = require("../interface/sender/whatsappSender");
 
 // Logging
 const { logChat } = require("../services/logging/chatLogger");
@@ -57,15 +54,12 @@ function maintainCache() {
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    // ✅ ALWAYS ACK FIRST (CRITICAL FOR WHATSAPP)
+    // ✅ ACK FIRST (CRITICAL)
     res.sendStatus(200);
 
     const value = req.body?.entry?.[0]?.changes?.[0]?.value;
     const message = value?.messages?.[0];
 
-    /**
-     * ✅ STRICT FILTER
-     */
     if (!message || !message.from) return;
 
     /**
@@ -102,7 +96,7 @@ exports.handleWebhook = async (req, res) => {
     console.log("📥 Incoming:", { from, text });
 
     /**
-     * ✅ CLEAN PIPELINE CALL
+     * 🚀 PIPELINE (handles intent + flow + sending)
      */
     let response = null;
 
@@ -110,38 +104,20 @@ exports.handleWebhook = async (req, res) => {
       response = await messagePipeline({ from, text });
     } catch (pipelineError) {
       console.error("❌ Pipeline Error:", pipelineError.message);
-
-      response = {
-        type: "text",
-        message: "⚠️ Temporary issue. Please try again.",
-      };
     }
 
     console.log("📤 Pipeline response:", response);
 
     /**
-     * ✅ VALIDATE RESPONSE
+     * ✅ LOGGING ONLY (NO SENDING HERE)
      */
-    if (!response || !response.type || !response.message) return;
-
-    /**
-     * ✅ SINGLE SENDER
-     */
-    try {
-      await whatsappSender.sendResponse(from, response);
-      console.log("✅ Message sent:", from);
-    } catch (sendError) {
-      console.error("❌ Send Error:", sendError.message);
+    if (response?.message) {
+      logChat({
+        userId: from,
+        message: text,
+        response: response.message,
+      });
     }
-
-    /**
-     * ✅ LOGGING
-     */
-    logChat({
-      userId: from,
-      message: text,
-      response: response.message,
-    });
 
   } catch (error) {
     console.error("❌ Webhook Error:", error.message);
