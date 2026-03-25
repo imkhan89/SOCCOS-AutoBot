@@ -1,9 +1,9 @@
 /**
- * CLEAN PIPELINE — ORCHESTRATOR ONLY (UPDATED)
- * --------------------------------------------
- * - Added Query Normalization (PRE-INTENT)
- * - No UI logic added
- * - Keeps architecture intact
+ * CLEAN PIPELINE — ORCHESTRATOR ONLY (FIXED)
+ * ------------------------------------------
+ * - Query normalization added
+ * - Async flowBuilder fixed
+ * - Response validation fixed
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -17,7 +17,7 @@ const { buildFlow } = require("../ux/flowBuilder");
 const { sendMessage } = require("../../interface/sender/whatsappSender");
 
 /**
- * 🧹 NORMALIZE QUERY (CRITICAL FIX)
+ * 🧹 NORMALIZE MESSAGE
  */
 function normalizeMessage(text = "") {
   if (!text || typeof text !== "string") return "";
@@ -27,8 +27,8 @@ function normalizeMessage(text = "") {
     .replace(/🔍/g, "")
     .replace(/search product/gi, "")
     .replace(/browse categories/gi, "")
-    .replace(/^\s+|\s+$/g, "") // trim
-    .replace(/\s+/g, " "); // normalize spaces
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 async function messagePipeline({ from, text }) {
@@ -39,7 +39,7 @@ async function messagePipeline({ from, text }) {
     }
 
     const rawMessage = text || "";
-    const normalizedMessage = normalizeMessage(rawMessage);
+    const cleanedMessage = normalizeMessage(rawMessage);
 
     /**
      * ✅ LOAD SESSION
@@ -47,7 +47,7 @@ async function messagePipeline({ from, text }) {
     let session = sessionMemory.getSession(from) || {};
 
     /**
-     * ✅ UPDATE LAST ACTIVITY
+     * ✅ UPDATE ACTIVITY
      */
     sessionMemory.updateSession(from, {
       lastActivity: Date.now(),
@@ -73,32 +73,43 @@ async function messagePipeline({ from, text }) {
     session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🧠 STEP 1 — RESOLVE INTENT (USE CLEAN MESSAGE)
+     * 🧠 STEP 1 — INTENT (CLEAN INPUT)
      */
-    const intent = resolveIntent(normalizedMessage);
+    const intent = resolveIntent(cleanedMessage);
 
     logger.info("🧠 Intent:", intent);
-    logger.info("🧹 Cleaned Message:", normalizedMessage);
+    logger.info("🧹 Cleaned Message:", cleanedMessage);
 
     /**
-     * 🔁 STEP 2 — BUILD FLOW
+     * 🔁 STEP 2 — BUILD FLOW (FIX: AWAIT)
      */
-    const response = buildFlow(from, intent, {
+    const response = await buildFlow(from, intent, {
       rawMessage,
-      cleanedMessage: normalizedMessage,
+      cleanedMessage,
     });
 
-    if (!response || !response.message) {
+    /**
+     * ❌ FIX: VALIDATION (message OR body)
+     */
+    if (!response || (!response.message && !response.body)) {
       logger.warn("Invalid response generated", { from, intent });
       return null;
     }
 
     /**
-     * 📤 STEP 3 — SEND MESSAGE
+     * ✅ NORMALIZE RESPONSE FOR SENDER
      */
-    await sendMessage(from, response);
+    const normalizedResponse = {
+      ...response,
+      message: response.message || response.body || "",
+    };
 
-    return response;
+    /**
+     * 📤 STEP 3 — SEND
+     */
+    await sendMessage(from, normalizedResponse);
+
+    return normalizedResponse;
 
   } catch (error) {
     logger.error("Pipeline Error:", error);
