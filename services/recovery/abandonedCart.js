@@ -1,33 +1,26 @@
 /**
- * Abandoned Click Recovery Service (FINAL — HARDENED + SMART TIMING)
+ * CLEAN RECOVERY SERVICE — LOGIC ONLY (NO SENDING)
+ * ----------------------------------------------
+ * - No WhatsApp sending
+ * - No UI building
+ * - Only detects recovery condition
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
-const whatsappSender = require("../../interface/sender/whatsappSender");
 
 // ⏱️ CONFIG
 const TIME_LIMIT = 5 * 60 * 1000; // 5 minutes inactivity
-const COOLDOWN = 30 * 60 * 1000; // 30 minutes before next recovery allowed
-
-/**
- * 🔗 BUILD RECOVERY URL
- */
-function buildRecoveryUrl(product, userId) {
-  if (!product?.handle) return "";
-
-  return `https://ndestore.com/products/${product.handle}?utm_source=whatsapp&utm_medium=recovery&utm_campaign=abandoned&utm_user=${encodeURIComponent(
-    userId
-  )}`;
-}
+const COOLDOWN = 30 * 60 * 1000; // 30 minutes between recoveries
 
 async function runAbandonedRecovery() {
   try {
     const sessions = sessionMemory.getAllSessions();
     const now = Date.now();
 
+    const recoveryQueue = [];
+
     for (const userId in sessions) {
       const session = sessions[userId];
-
       if (!session) continue;
 
       const {
@@ -38,54 +31,48 @@ async function runAbandonedRecovery() {
       } = session;
 
       /**
-       * ✅ CONDITION 1: Must have clicked product
+       * ✅ CONDITION 1: Product clicked
        */
       if (!lastClickedProduct) continue;
 
       /**
-       * ✅ CONDITION 2: Must have inactivity
+       * ✅ CONDITION 2: Inactivity threshold
        */
       if (!lastActivity || now - lastActivity < TIME_LIMIT) continue;
 
       /**
-       * ✅ CONDITION 3: Avoid duplicate recovery spam
+       * ✅ CONDITION 3: Cooldown check
        */
-      if (recoverySent) {
-        // optional cooldown logic
-        if (recoveryTimestamp && now - recoveryTimestamp < COOLDOWN) {
-          continue;
-        }
+      if (
+        recoverySent &&
+        recoveryTimestamp &&
+        now - recoveryTimestamp < COOLDOWN
+      ) {
+        continue;
       }
 
-      const product = lastClickedProduct;
-      const productUrl = buildRecoveryUrl(product, userId);
+      /**
+       * ✅ ADD TO RECOVERY QUEUE (NO SENDING HERE)
+       */
+      recoveryQueue.push({
+        userId,
+        product: lastClickedProduct,
+      });
 
-      console.log("♻️ Sending recovery message to:", userId);
-
-      try {
-        await whatsappSender.sendText(
-          userId,
-          "⏳ Still interested?\n\n" +
-            `🔥 ${product?.title || "Your selected product"}\n\n` +
-            "Complete your order here:\n" +
-            `${productUrl}\n\n` +
-            "⚡ Limited stock available\n\n" +
-            "Reply if you need help 👍"
-        );
-
-        /**
-         * ✅ UPDATE SESSION (CRITICAL)
-         */
-        sessionMemory.updateSession(userId, {
-          recoverySent: true,
-          recoveryTimestamp: Date.now(),
-        });
-      } catch (sendError) {
-        console.error("❌ Recovery Send Error:", sendError.message);
-      }
+      /**
+       * ✅ UPDATE SESSION (MARK RECOVERY TRIGGERED)
+       */
+      sessionMemory.updateSession(userId, {
+        recoverySent: true,
+        recoveryTimestamp: now,
+      });
     }
+
+    return recoveryQueue;
+
   } catch (err) {
     console.error("❌ Recovery Error:", err.message);
+    return [];
   }
 }
 
