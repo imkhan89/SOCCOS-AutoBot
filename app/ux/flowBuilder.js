@@ -20,7 +20,6 @@ const invalidInput = require("../../interface/ui/error/invalidInput");
 // State Manager
 const {
   getState,
-  updateState,
   setScreen,
   setProduct,
   setQuery
@@ -33,7 +32,7 @@ function buildFlow(userId, intent = {}) {
   try {
     const { type, payload = {} } = intent;
 
-    const state = getState(userId);
+    getState(userId); // ensure state exists
 
     switch (type) {
 
@@ -54,7 +53,6 @@ function buildFlow(userId, intent = {}) {
         setQuery(userId, query);
         setScreen(userId, "search_results");
 
-        // NOTE: No real DB yet → mock empty or sample
         const results = mockSearch(query);
 
         if (!results.length) {
@@ -69,7 +67,6 @@ function buildFlow(userId, intent = {}) {
         const productId = payload.productId;
 
         const product = mockProduct(productId);
-
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -83,7 +80,6 @@ function buildFlow(userId, intent = {}) {
         const productId = payload.productId;
 
         const product = mockProduct(productId);
-
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -97,7 +93,6 @@ function buildFlow(userId, intent = {}) {
         const productId = payload.productId;
 
         const product = mockProduct(productId);
-
         if (!product) return fallbackMessage();
 
         setProduct(userId, productId);
@@ -106,7 +101,8 @@ function buildFlow(userId, intent = {}) {
         return productActions(product);
       }
 
-      case "confirm_order": {
+      // ---------------- CONFIRM ----------------
+      case "confirm_order":
         setScreen(userId, "order_confirmed");
 
         return {
@@ -114,7 +110,6 @@ function buildFlow(userId, intent = {}) {
           message: "✅ Your order has been placed! Our team will contact you shortly.",
           meta: { screen: "order_confirmed" }
         };
-      }
 
       // ---------------- SUPPORT ----------------
       case "support":
@@ -124,10 +119,11 @@ function buildFlow(userId, intent = {}) {
           meta: { screen: "support" }
         };
 
-      // ---------------- FALLBACK ----------------
+      // ---------------- INVALID ----------------
       case "unknown":
         return invalidInput(payload.input);
 
+      // ---------------- DEFAULT ----------------
       default:
         return fallbackMessage();
     }
@@ -137,9 +133,7 @@ function buildFlow(userId, intent = {}) {
   }
 }
 
----
-
-# 🧪 Mock Data (Temporary — Replace Later)
+// ---------------- MOCK DATA (TEMPORARY) ----------------
 
 function mockSearch(query) {
   if (!query) return [];
