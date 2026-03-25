@@ -28,7 +28,7 @@ function error(message, data = {}) {
   console.error(format("ERROR", message, data));
 }
 
-// ✅ GENERIC (BACKWARD COMPATIBILITY)
+// ✅ BACKWARD COMPATIBILITY
 function log(type, message, data = {}) {
   console.log(format(type, message, data));
 }
