@@ -1,5 +1,12 @@
 /**
- * CLEAN WHATSAPP SENDER — SINGLE SOURCE OF TRUTH
+ * CLEAN WHATSAPP SENDER — SINGLE SOURCE OF TRUTH (UPDATED)
+ * --------------------------------------------------------
+ * Fixes:
+ * - Supports text messages
+ * - Supports button-based interactive messages
+ * - Supports list-based interactive messages
+ * - Accepts both message/body style responses
+ * - Keeps retry + duplicate protection
  */
 
 const axios = require("axios");
@@ -32,19 +39,62 @@ function isEnvValid() {
   );
 }
 
-function validateResponse(response) {
-  if (!response) throw new Error("Empty response");
+function getDisplayText(response = {}) {
+  return (
+    response.message ||
+    response.body ||
+    response.header ||
+    response.title ||
+    ""
+  );
+}
 
-  if (!response.type || !response.message) {
+function validateResponse(response) {
+  if (!response || typeof response !== "object") {
+    throw new Error("Empty response");
+  }
+
+  if (!response.type) {
     throw new Error("Invalid response structure");
   }
+
+  const displayText = getDisplayText(response);
+
+  if (response.type === "text") {
+    if (!displayText) {
+      throw new Error("Text message is missing body");
+    }
+    return;
+  }
+
+  if (response.type === "interactive") {
+    if (!displayText && !Array.isArray(response.buttons) && !Array.isArray(response.sections)) {
+      throw new Error("Interactive message is missing content");
+    }
+    return;
+  }
+
+  if (response.type === "list") {
+    if (
+      !response.body ||
+      !Array.isArray(response.sections) ||
+      response.sections.length === 0
+    ) {
+      throw new Error("List message is missing body or sections");
+    }
+    return;
+  }
+
+  throw new Error("Invalid response type");
 }
 
 /**
  * 🧱 BUILD PAYLOAD
  */
 function buildPayload(to, response) {
-  const { type, message, buttons = [] } = response;
+  const type = response.type;
+  const message = getDisplayText(response);
+  const buttons = Array.isArray(response.buttons) ? response.buttons : [];
 
   // ---------------- TEXT ----------------
   if (type === "text") {
@@ -58,7 +108,7 @@ function buildPayload(to, response) {
     };
   }
 
-  // ---------------- INTERACTIVE ----------------
+  // ---------------- BUTTON INTERACTIVE ----------------
   if (type === "interactive") {
     return {
       messaging_product: "whatsapp",
@@ -70,12 +120,53 @@ function buildPayload(to, response) {
           text: message,
         },
         action: {
-          buttons: buttons.map((btn) => ({
+          buttons: buttons.slice(0, 3).map((btn) => ({
             type: "reply",
             reply: {
               id: btn.id,
-              title: btn.title,
+              title: String(btn.title || "").substring(0, 20),
             },
+          })),
+        },
+      },
+    };
+  }
+
+  // ---------------- LIST INTERACTIVE ----------------
+  if (type === "list") {
+    const sections = Array.isArray(response.sections) ? response.sections : [];
+
+    return {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        header: response.header
+          ? {
+              type: "text",
+              text: String(response.header).substring(0, 60),
+            }
+          : undefined,
+        body: {
+          text: String(response.body || "").substring(0, 1024),
+        },
+        footer: response.footer
+          ? {
+              text: String(response.footer).substring(0, 60),
+            }
+          : undefined,
+        action: {
+          button: String(response.buttonText || "View Products").substring(0, 20),
+          sections: sections.map((section) => ({
+            title: String(section.title || "Products").substring(0, 24),
+            rows: (Array.isArray(section.rows) ? section.rows : []).slice(0, 10).map((row) => ({
+              id: String(row.id || "").substring(0, 200),
+              title: String(row.title || "Item").substring(0, 24),
+              description: row.description
+                ? String(row.description).substring(0, 72)
+                : undefined,
+            })),
           })),
         },
       },
@@ -107,7 +198,6 @@ async function send(payload, attempt = 0) {
 
     console.log("✅ Message sent:", payload.to);
     return response.data;
-
   } catch (error) {
     const errMsg =
       error?.response?.data ||
@@ -136,7 +226,8 @@ async function sendMessage(to, response) {
 
     validateResponse(response);
 
-    const key = `${to}:${response.message}`;
+    const dedupeText = getDisplayText(response) || JSON.stringify(response);
+    const key = `${to}:${response.type}:${dedupeText}`;
 
     if (sentMessages.has(key)) {
       console.warn("⚠️ Duplicate message blocked");
@@ -149,7 +240,6 @@ async function sendMessage(to, response) {
     const payload = buildPayload(to, response);
 
     return await send(payload);
-
   } catch (error) {
     console.error("❌ sendMessage Error:", error.message);
     throw error;
@@ -157,5 +247,5 @@ async function sendMessage(to, response) {
 }
 
 module.exports = {
-  sendMessage
+  sendMessage,
 };
