@@ -1,6 +1,6 @@
 /**
  * SOCCOS-AutoBot
- * Shopify Client (FINAL — HARDENED)
+ * Shopify Client (FINAL — FIXED)
  */
 
 const axios = require("axios");
@@ -14,15 +14,38 @@ const headers = {
 };
 
 /**
- * 🔍 SEARCH PRODUCTS (HARDENED)
+ * 🔍 SEARCH PRODUCTS (FIXED)
  */
-async function searchProducts(query) {
+async function searchProducts(input) {
   try {
     if (!env.shopify.storeUrl || !env.shopify.accessToken) {
       console.warn("⚠️ Shopify not configured");
       return [];
     }
 
+    /**
+     * ✅ FIX: HANDLE BOTH INPUT TYPES
+     */
+    let query = "";
+
+    if (typeof input === "string") {
+      query = input;
+    } else if (typeof input === "object" && input !== null) {
+      query = input.query || "";
+    }
+
+    /**
+     * ❌ INVALID
+     */
+    if (!query || typeof query !== "string") {
+      return [];
+    }
+
+    const cleanedQuery = query.toLowerCase().trim();
+
+    /**
+     * 📦 FETCH PRODUCTS
+     */
     const response = await axios.get(`${BASE_URL}/products.json`, {
       headers,
       params: { limit: 50 },
@@ -32,14 +55,16 @@ async function searchProducts(query) {
 
     console.log("🧾 Total Shopify Products:", products.length);
 
-    if (!query) return products;
-
-    const keywords = query
-      .toLowerCase()
-      .trim()
+    /**
+     * 🔎 KEYWORDS
+     */
+    const keywords = cleanedQuery
       .split(" ")
       .filter(Boolean);
 
+    /**
+     * 🔍 FILTER
+     */
     const filtered = products.filter((p) => {
       const title = (p.title || "").toLowerCase();
       const tags = (p.tags || "").toLowerCase();
@@ -48,19 +73,34 @@ async function searchProducts(query) {
 
       const searchableText = `${title} ${tags} ${type} ${vendor}`;
 
-      return keywords.some((word) => searchableText.includes(word));
+      return keywords.some((word) =>
+        searchableText.includes(word)
+      );
     });
 
-    console.log("🔍 Query:", query);
+    console.log("🔍 Query:", cleanedQuery);
     console.log("✅ Matched:", filtered.length);
 
-    // ✅ FALLBACK (CRITICAL)
+    /**
+     * ⚠️ FALLBACK
+     */
     if (filtered.length === 0) {
       console.warn("⚠️ No match → returning default products");
       return products.slice(0, 5);
     }
 
-    return filtered;
+    /**
+     * ✅ NORMALIZE OUTPUT (IMPORTANT FOR UI)
+     */
+    return filtered.map((p) => ({
+      id: p.id,
+      title: p.title,
+      price: p.variants?.[0]?.price || 0,
+      image: p.image?.src || null,
+      sku: p.variants?.[0]?.sku || "",
+      stock: p.variants?.[0]?.inventory_quantity || 0,
+      variants: p.variants || [],
+    }));
 
   } catch (error) {
     console.error("❌ Shopify Search Error:", error.message);
@@ -69,7 +109,7 @@ async function searchProducts(query) {
 }
 
 /**
- * 🛒 CREATE ORDER (HARDENED)
+ * 🛒 CREATE ORDER (UNCHANGED)
  */
 async function createOrder(orderData, retries = 2) {
   try {
