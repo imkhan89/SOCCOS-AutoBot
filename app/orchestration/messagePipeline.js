@@ -1,10 +1,15 @@
 /**
  * CLEAN PIPELINE — ORCHESTRATOR ONLY
- * No UI, No UX, No Business Logic
+ * No UI, No Business Logic
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
 const logger = require("../../utils/logger");
+
+// ✅ NEW IMPORTS (UX ENGINE + SENDER)
+const { resolveIntent } = require("../ux/intentResolver");
+const { buildFlow } = require("../ux/flowBuilder");
+const { sendMessage } = require("../../interface/sender/whatsappSender");
 
 async function messagePipeline({ from, text }) {
   try {
@@ -47,20 +52,44 @@ async function messagePipeline({ from, text }) {
     session = sessionMemory.getSession(from) || {};
 
     /**
-     * 🚧 TEMPORARY RESPONSE (UNTIL UX LAYER IS BUILT)
+     * 🧠 STEP 1 — RESOLVE INTENT
      */
-    return {
-      type: "text",
-      message: "Processing your request..."
-    };
+    const intent = resolveIntent(message);
+
+    /**
+     * 🔁 STEP 2 — BUILD FLOW (UI RESPONSE)
+     */
+    const response = buildFlow(from, intent);
+
+    if (!response || !response.message) {
+      logger.warn("Invalid response generated", { from, intent });
+      return null;
+    }
+
+    /**
+     * 📤 STEP 3 — SEND MESSAGE (SINGLE SOURCE)
+     */
+    await sendMessage(from, response);
+
+    return response;
 
   } catch (error) {
     logger.error("Pipeline Error:", error);
 
-    return {
+    // ✅ FAIL-SAFE RESPONSE
+    const fallback = {
       type: "text",
-      message: "Something went wrong. Please try again."
+      message: "⚠️ Something went wrong. Please try again.",
+      meta: { screen: "pipeline_error" }
     };
+
+    try {
+      await sendMessage(from, fallback);
+    } catch (sendError) {
+      logger.error("Sender Failed:", sendError);
+    }
+
+    return fallback;
   }
 }
 
