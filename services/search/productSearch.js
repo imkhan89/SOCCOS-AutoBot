@@ -1,11 +1,9 @@
 /**
- * PRODUCT SEARCH SERVICE — PRODUCTION (CLEAN + SCALABLE)
- * -----------------------------------------------------
- * - Logic only (NO UI / NO WhatsApp formatting)
- * - Shopify-based search
- * - Input sanitization
- * - Consistent safe output (always array)
- * - Ready for future filters (category, SKU, etc.)
+ * PRODUCT SEARCH SERVICE — PRODUCTION (FIXED)
+ * ------------------------------------------
+ * - Supports BOTH string + object input
+ * - Prevents query.toLowerCase crash
+ * - Fully backward compatible
  */
 
 const shopifyClient = require("../../integrations/shopifyClient");
@@ -13,25 +11,41 @@ const logger = require("../../utils/logger");
 
 /**
  * 🔍 SEARCH PRODUCTS
- * @param {Object} params
- * @param {string} params.query
- * @param {string} [params.category]
- * @param {number} [params.limit]
+ * @param {string|Object} input
  */
-async function search({ query, category = null, limit = 10 } = {}) {
+async function search(input, options = {}) {
   try {
-    // ✅ INPUT VALIDATION
+    let query = "";
+    let category = null;
+    let limit = options.limit || 10;
+
+    /**
+     * ✅ SUPPORT BOTH INPUT TYPES
+     */
+    if (typeof input === "string") {
+      query = input;
+    } else if (typeof input === "object" && input !== null) {
+      query = input.query || "";
+      category = input.category || null;
+      limit = input.limit || limit;
+    }
+
+    /**
+     * ❌ INVALID INPUT
+     */
     if (!query || typeof query !== "string") {
       return [];
     }
 
-    const cleanedQuery = query.trim();
+    const cleanedQuery = query.trim().toLowerCase();
 
     if (cleanedQuery.length < 2) {
       return [];
     }
 
-    // ✅ BUILD SEARCH PAYLOAD
+    /**
+     * 🔎 BUILD SEARCH PARAMS
+     */
     const searchParams = {
       query: cleanedQuery,
       limit,
@@ -41,22 +55,28 @@ async function search({ query, category = null, limit = 10 } = {}) {
       searchParams.category = category;
     }
 
-    // ✅ CALL SHOPIFY CLIENT
+    /**
+     * 📦 CALL SHOPIFY
+     */
     const results = await shopifyClient.searchProducts(searchParams);
 
-    // ✅ ENSURE ARRAY SAFETY
+    /**
+     * 🛡 SAFETY CHECK
+     */
     if (!Array.isArray(results)) {
       logger.warn("Search returned non-array result");
       return [];
     }
 
-    // ✅ OPTIONAL: FILTER OUT INVALID PRODUCTS
+    /**
+     * ✅ CLEAN RESULTS
+     */
     const safeResults = results.filter((p) => {
       return (
         p &&
         typeof p === "object" &&
         (p.id || p._id) &&
-        p.title
+        (p.title || p.name)
       );
     });
 
@@ -64,13 +84,12 @@ async function search({ query, category = null, limit = 10 } = {}) {
 
   } catch (error) {
     logger.error("Search Error:", error.message);
-
     return [];
   }
 }
 
 /**
- * 🔎 SEARCH BY SKU (for direct product intent)
+ * 🔎 SEARCH BY SKU
  */
 async function searchBySKU(sku) {
   try {
