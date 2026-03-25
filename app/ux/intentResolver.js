@@ -1,11 +1,29 @@
-// app/ux/intentResolver.js
+/**
+ * INTENT RESOLVER — UPDATED (WITH SEARCH STATE SUPPORT)
+ * -----------------------------------------------------
+ * - Fixes invalid input issue after "Search Product"
+ * - Supports state-based intent override
+ */
 
-function resolveIntent(input = "") {
+const { getState } = require("./stateManager");
+
+function resolveIntent(input = "", userId = null) {
   if (!input || typeof input !== "string") {
     return buildIntent("unknown");
   }
 
   const text = normalize(input);
+
+  /**
+   * 🔥 NEW: STATE-BASED OVERRIDE (CRITICAL FIX)
+   */
+  if (userId) {
+    const state = getState(userId);
+
+    if (state?.screen === "awaiting_search_input") {
+      return buildIntent("search", { query: text });
+    }
+  }
 
   // ---- Navigation Intents ----
   if (isGreeting(text)) return buildIntent("main_menu");
@@ -16,6 +34,13 @@ function resolveIntent(input = "") {
 
   if (includesAny(text, ["category", "categories", "browse"])) {
     return buildIntent("browse_categories");
+  }
+
+  /**
+   * 🔍 EXPLICIT SEARCH BUTTON (IMPORTANT)
+   */
+  if (includesAny(text, ["search product", "search"])) {
+    return buildIntent("search_product");
   }
 
   // ---- Search Intent ----
@@ -64,12 +89,12 @@ function isGreeting(text) {
 }
 
 function isSearchQuery(text) {
-  // If not a command and length > 2 → treat as search
   if (text.length < 3) return false;
 
   const blocked = [
     "hi", "hello", "menu", "start",
-    "category", "browse", "help"
+    "category", "browse", "help",
+    "search", "search product"
   ];
 
   return !blocked.includes(text);
