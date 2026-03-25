@@ -1,6 +1,9 @@
 /**
- * SOCCOS-AutoBot
- * Shopify Client (FINAL — FIXED)
+ * SHOPIFY CLIENT — FULL CATALOG (FINAL)
+ * -------------------------------------
+ * - Fetches ALL products using pagination
+ * - NO filtering here
+ * - Clean structured output
  */
 
 const axios = require("axios");
@@ -14,87 +17,52 @@ const headers = {
 };
 
 /**
- * 🔍 SEARCH PRODUCTS (FIXED)
+ * 🔥 FETCH ALL PRODUCTS (PAGINATION — CRITICAL)
  */
-async function searchProducts(input) {
+async function fetchAllProducts() {
   try {
     if (!env.shopify.storeUrl || !env.shopify.accessToken) {
       console.warn("⚠️ Shopify not configured");
       return [];
     }
 
-    /**
-     * ✅ FIX: HANDLE BOTH INPUT TYPES
-     */
-    let query = "";
+    let allProducts = [];
+    let url = `${BASE_URL}/products.json?limit=250`;
 
-    if (typeof input === "string") {
-      query = input;
-    } else if (typeof input === "object" && input !== null) {
-      query = input.query || "";
+    while (url) {
+      const response = await axios.get(url, { headers });
+
+      const products = response.data.products || [];
+
+      allProducts.push(...products);
+
+      // 🔥 Handle pagination
+      const linkHeader = response.headers.link;
+
+      if (linkHeader && linkHeader.includes('rel="next"')) {
+        const nextLink = linkHeader
+          .split(",")
+          .find(l => l.includes('rel="next"'))
+          .match(/<(.+)>/)[1];
+
+        url = nextLink;
+      } else {
+        url = null;
+      }
     }
 
-    /**
-     * ❌ INVALID
-     */
-    if (!query || typeof query !== "string") {
-      return [];
-    }
-
-    const cleanedQuery = query.toLowerCase().trim();
+    console.log("🧾 Total Shopify Products:", allProducts.length);
 
     /**
-     * 📦 FETCH PRODUCTS
+     * ✅ NORMALIZE OUTPUT
      */
-    const response = await axios.get(`${BASE_URL}/products.json`, {
-      headers,
-      params: { limit: 50 },
-    });
-
-    const products = response.data.products || [];
-
-    console.log("🧾 Total Shopify Products:", products.length);
-
-    /**
-     * 🔎 KEYWORDS
-     */
-    const keywords = cleanedQuery
-      .split(" ")
-      .filter(Boolean);
-
-    /**
-     * 🔍 FILTER
-     */
-    const filtered = products.filter((p) => {
-      const title = (p.title || "").toLowerCase();
-      const tags = (p.tags || "").toLowerCase();
-      const type = (p.product_type || "").toLowerCase();
-      const vendor = (p.vendor || "").toLowerCase();
-
-      const searchableText = `${title} ${tags} ${type} ${vendor}`;
-
-      return keywords.some((word) =>
-        searchableText.includes(word)
-      );
-    });
-
-    console.log("🔍 Query:", cleanedQuery);
-    console.log("✅ Matched:", filtered.length);
-
-    /**
-     * ⚠️ FALLBACK
-     */
-    if (filtered.length === 0) {
-      console.warn("⚠️ No match → returning default products");
-      return products.slice(0, 5);
-    }
-
-    /**
-     * ✅ NORMALIZE OUTPUT (IMPORTANT FOR UI)
-     */
-    return filtered.map((p) => ({
+    return allProducts.map((p) => ({
       id: p.id,
       title: p.title,
+      body_html: p.body_html,
+      vendor: p.vendor,
+      product_type: p.product_type,
+      tags: p.tags,
       price: p.variants?.[0]?.price || 0,
       image: p.image?.src || null,
       sku: p.variants?.[0]?.sku || "",
@@ -103,7 +71,7 @@ async function searchProducts(input) {
     }));
 
   } catch (error) {
-    console.error("❌ Shopify Search Error:", error.message);
+    console.error("❌ Shopify Fetch Error:", error.message);
     return [];
   }
 }
@@ -166,6 +134,6 @@ async function createOrder(orderData, retries = 2) {
 }
 
 module.exports = {
-  searchProducts,
+  fetchAllProducts,
   createOrder,
 };
