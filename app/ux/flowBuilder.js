@@ -37,7 +37,7 @@ async function buildFlow(userId, intent = {}, context = {}) {
     const { type, payload = {} } = intent;
     const { cleanedMessage } = context;
 
-    getState(userId);
+    const state = getState(userId);
 
     switch (type) {
 
@@ -50,6 +50,18 @@ async function buildFlow(userId, intent = {}, context = {}) {
       case "browse_categories":
         setScreen(userId, "category_menu");
         return categoryMenu();
+
+      /**
+       * 🔍 SEARCH BUTTON CLICK (NEW — CRITICAL)
+       */
+      case "search_product":
+        setScreen(userId, "awaiting_search_input");
+
+        return {
+          type: "text",
+          message: "🔍 What product are you looking for?",
+          meta: { screen: "awaiting_search_input" }
+        };
 
       // ---------------- SEARCH ----------------
       case "search": {
@@ -65,14 +77,12 @@ async function buildFlow(userId, intent = {}, context = {}) {
         setQuery(userId, query);
         setScreen(userId, "search_results");
 
-        // ✅ FIX 1: PASS STRING (NOT OBJECT)
         const resultsRaw = await search(query);
 
         if (!resultsRaw || !resultsRaw.length) {
           return emptyResults(query);
         }
 
-        // ✅ FIX 2: LIMIT RESULTS (WHATSAPP SAFE)
         const results = resultsRaw.slice(0, 10);
 
         return searchResults({ query, results });
