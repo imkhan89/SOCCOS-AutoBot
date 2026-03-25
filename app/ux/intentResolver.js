@@ -1,8 +1,9 @@
 /**
- * INTENT RESOLVER — UPDATED (WITH SEARCH STATE SUPPORT)
- * -----------------------------------------------------
- * - Fixes invalid input issue after "Search Product"
- * - Supports state-based intent override
+ * INTENT RESOLVER — PRODUCTION FIXED
+ * ---------------------------------
+ * - Supports WhatsApp button IDs (CRITICAL)
+ * - Strong state-based routing
+ * - Clean separation of navigation vs search
  */
 
 const { getState } = require("./stateManager");
@@ -15,7 +16,16 @@ function resolveIntent(input = "", userId = null) {
   const text = normalize(input);
 
   /**
-   * 🔥 NEW: STATE-BASED OVERRIDE (CRITICAL FIX)
+   * 🔥 PRIORITY 1: DIRECT BUTTON IDS (CRITICAL FIX)
+   */
+  if (text === "main_menu") return buildIntent("main_menu");
+  if (text === "browse_categories") return buildIntent("browse_categories");
+  if (text === "search_product") return buildIntent("search_product");
+  if (text === "talk_support") return buildIntent("support");
+  if (text === "chat_support") return buildIntent("support");
+
+  /**
+   * 🔥 PRIORITY 2: STATE-BASED OVERRIDE
    */
   if (userId) {
     const state = getState(userId);
@@ -25,7 +35,9 @@ function resolveIntent(input = "", userId = null) {
     }
   }
 
-  // ---- Navigation Intents ----
+  /**
+   * 🔥 PRIORITY 3: GREETING / NAVIGATION
+   */
   if (isGreeting(text)) return buildIntent("main_menu");
 
   if (includesAny(text, ["menu", "start", "home"])) {
@@ -37,18 +49,15 @@ function resolveIntent(input = "", userId = null) {
   }
 
   /**
-   * 🔍 EXPLICIT SEARCH BUTTON (IMPORTANT)
+   * 🔍 MANUAL SEARCH TRIGGER (TEXT BASED)
    */
   if (includesAny(text, ["search product", "search"])) {
     return buildIntent("search_product");
   }
 
-  // ---- Search Intent ----
-  if (isSearchQuery(text)) {
-    return buildIntent("search", { query: text });
-  }
-
-  // ---- Product Interaction ----
+  /**
+   * 🔥 PRIORITY 4: PRODUCT ACTION IDS
+   */
   if (text.startsWith("view_")) {
     return buildIntent("view_product", { productId: extractId(text) });
   }
@@ -65,12 +74,24 @@ function resolveIntent(input = "", userId = null) {
     return buildIntent("confirm_order", { productId: extractId(text) });
   }
 
-  // ---- Support ----
+  /**
+   * 🛟 SUPPORT
+   */
   if (includesAny(text, ["help", "support", "agent"])) {
     return buildIntent("support");
   }
 
-  // ---- Fallback ----
+  /**
+   * 🔍 FINAL: SAFE SEARCH DETECTION
+   * Only trigger search if NOT navigation
+   */
+  if (isSearchQuery(text)) {
+    return buildIntent("search", { query: text });
+  }
+
+  /**
+   * ❌ FALLBACK
+   */
   return buildIntent("unknown", { input });
 }
 
@@ -94,7 +115,9 @@ function isSearchQuery(text) {
   const blocked = [
     "hi", "hello", "menu", "start",
     "category", "browse", "help",
-    "search", "search product"
+    "search", "search product",
+    "main_menu", "browse_categories",
+    "search_product", "talk_support"
   ];
 
   return !blocked.includes(text);
