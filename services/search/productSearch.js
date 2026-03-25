@@ -1,9 +1,9 @@
 /**
- * PRODUCT SEARCH SERVICE — FULL CATALOG (FINAL)
+ * PRODUCT SEARCH SERVICE — FINAL (HIGH ACCURACY)
  * --------------------------------------------
- * - Fetches ALL Shopify products (via pagination)
- * - Caches products (fast)
- * - Token-based accurate search (NO wrong matches)
+ * - Full catalog (via Shopify pagination)
+ * - Smart caching
+ * - STRICT + WEIGHTED token matching
  */
 
 const { fetchAllProducts } = require("../../integrations/shopifyClient");
@@ -12,7 +12,7 @@ const logger = require("../../utils/logger");
 // 🧠 CACHE
 let CACHE = [];
 let LAST_FETCH = 0;
-const CACHE_TTL = 5 * 60 * 1000; // 5 min
+const CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * 🔍 MAIN SEARCH
@@ -22,7 +22,6 @@ async function search(input, options = {}) {
     let query = "";
     let limit = options.limit || 10;
 
-    // ✅ Normalize input
     if (typeof input === "string") {
       query = input;
     } else if (typeof input === "object" && input !== null) {
@@ -33,7 +32,6 @@ async function search(input, options = {}) {
     if (!query || typeof query !== "string") return [];
 
     const cleanedQuery = normalize(query);
-
     if (cleanedQuery.length < 2) return [];
 
     // 🔥 TOKENIZE
@@ -41,19 +39,27 @@ async function search(input, options = {}) {
       .split(" ")
       .filter(t => t.length > 1);
 
-    // 🔄 GET FULL PRODUCT LIST
     const products = await getProductsCached();
 
-    // 🧠 FILTER
-    const matched = products.filter(product =>
-      matchProduct(product, tokens)
-    );
+    /**
+     * 🧠 SCORE-BASED MATCHING (CRITICAL FIX)
+     */
+    const scored = products.map(product => {
+      const score = scoreProduct(product, tokens);
+      return { product, score };
+    });
+
+    // ✅ Keep only relevant
+    const filtered = scored
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.product);
 
     logger.info(`🔍 Query: ${cleanedQuery}`);
     logger.info(`🧾 Total Products: ${products.length}`);
-    logger.info(`✅ Matched: ${matched.length}`);
+    logger.info(`✅ Matched: ${filtered.length}`);
 
-    return matched.slice(0, limit);
+    return filtered.slice(0, limit);
 
   } catch (error) {
     logger.error("Search Error:", error.message);
@@ -62,14 +68,34 @@ async function search(input, options = {}) {
 }
 
 /**
- * 🔒 MATCH LOGIC (STRICT)
+ * 🧠 SCORING ENGINE (SMART MATCH)
  */
-function matchProduct(product, tokens) {
-  if (!product) return false;
+function scoreProduct(product, tokens) {
+  if (!product) return 0;
 
   const text = buildSearchText(product);
 
-  return tokens.every(token => text.includes(token));
+  let score = 0;
+
+  tokens.forEach(token => {
+    if (text.includes(token)) {
+      score += 2; // base match
+    }
+  });
+
+  // 🔥 STRONG MATCH BOOST (title priority)
+  const title = (product.title || "").toLowerCase();
+
+  tokens.forEach(token => {
+    if (title.includes(token)) {
+      score += 3;
+    }
+  });
+
+  // ❌ STRICT FILTER: ALL TOKENS MUST APPEAR AT LEAST ONCE
+  const allMatch = tokens.every(token => text.includes(token));
+
+  return allMatch ? score : 0;
 }
 
 /**
@@ -116,7 +142,7 @@ function normalize(text) {
 }
 
 /**
- * 🔎 SKU SEARCH (UNCHANGED)
+ * 🔎 SKU SEARCH
  */
 async function searchBySKU(sku) {
   try {
@@ -125,7 +151,9 @@ async function searchBySKU(sku) {
     const cleanedSKU = sku.trim();
     if (!cleanedSKU) return null;
 
-    const product = CACHE.find(p =>
+    const products = await getProductsCached();
+
+    const product = products.find(p =>
       (p.variants || []).some(v => v.sku === cleanedSKU)
     );
 
