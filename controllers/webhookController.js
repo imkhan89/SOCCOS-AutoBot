@@ -1,6 +1,6 @@
 /**
- * CLEAN WEBHOOK CONTROLLER — PRODUCTION SAFE
- * Role: Validate → Deduplicate → Forward ONLY
+ * CLEAN WEBHOOK CONTROLLER — PRODUCTION SAFE (FIXED)
+ * Role: Validate → Deduplicate → Extract CORRECT INPUT → Forward
  */
 
 const env = require("../config/env");
@@ -50,6 +50,33 @@ function maintainCache() {
 }
 
 /**
+ * 🧠 CORRECT MESSAGE EXTRACTION (CRITICAL FIX)
+ */
+function extractUserInput(message) {
+  // TEXT MESSAGE
+  if (message.text?.body) {
+    return message.text.body.trim();
+  }
+
+  // BUTTON (legacy)
+  if (message.button?.payload) {
+    return message.button.payload.trim();
+  }
+
+  // INTERACTIVE BUTTON (IMPORTANT)
+  if (message.interactive?.type === "button_reply") {
+    return message.interactive.button_reply.id.trim(); // ✅ FIXED
+  }
+
+  // INTERACTIVE LIST (IMPORTANT)
+  if (message.interactive?.type === "list_reply") {
+    return message.interactive.list_reply.id.trim(); // ✅ FIXED
+  }
+
+  return "";
+}
+
+/**
  * POST /webhook (Main Handler)
  */
 exports.handleWebhook = async (req, res) => {
@@ -66,6 +93,7 @@ exports.handleWebhook = async (req, res) => {
      * 🔴 DUPLICATE PROTECTION
      */
     const messageId = message.id;
+
     if (messageId && processedMessages.has(messageId)) return;
 
     if (messageId) {
@@ -74,24 +102,15 @@ exports.handleWebhook = async (req, res) => {
     }
 
     /**
-     * ✅ SAFE TEXT EXTRACTION
+     * ✅ CORRECT INPUT EXTRACTION
      */
-    let text = "";
-
-    if (message.text?.body) {
-      text = message.text.body;
-    } else if (message.button?.text) {
-      text = message.button.text;
-    } else if (message.interactive?.button_reply?.title) {
-      text = message.interactive.button_reply.title;
-    } else {
-      return;
-    }
-
-    text = String(text).trim();
+    const text = extractUserInput(message);
     const from = String(message.from).trim();
 
-    if (!text) return;
+    if (!text) {
+      console.log("⚠️ Empty input received — skipping");
+      return;
+    }
 
     console.log("📥 Incoming:", { from, text });
 
