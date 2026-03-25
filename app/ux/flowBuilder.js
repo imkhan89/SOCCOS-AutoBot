@@ -17,7 +17,7 @@ const recoveryReminder = require("../../interface/ui/recovery/recoveryReminder")
 const fallbackMessage = require("../../interface/ui/error/fallbackMessage");
 const invalidInput = require("../../interface/ui/error/invalidInput");
 
-// ✅ REAL SERVICES (REPLACED MOCKS)
+// ✅ SERVICES
 const { search } = require("../../services/search/productSearch");
 const { getProduct } = require("../../services/product/getProduct");
 
@@ -37,7 +37,7 @@ async function buildFlow(userId, intent = {}, context = {}) {
     const { type, payload = {} } = intent;
     const { cleanedMessage } = context;
 
-    getState(userId); // ensure state exists
+    getState(userId);
 
     switch (type) {
 
@@ -53,7 +53,6 @@ async function buildFlow(userId, intent = {}, context = {}) {
 
       // ---------------- SEARCH ----------------
       case "search": {
-        // ✅ PRIORITY: payload → fallback → cleanedMessage
         const query =
           payload.query ||
           cleanedMessage ||
@@ -66,11 +65,15 @@ async function buildFlow(userId, intent = {}, context = {}) {
         setQuery(userId, query);
         setScreen(userId, "search_results");
 
-        const results = await search({ query });
+        // ✅ FIX 1: PASS STRING (NOT OBJECT)
+        const resultsRaw = await search(query);
 
-        if (!results || !results.length) {
+        if (!resultsRaw || !resultsRaw.length) {
           return emptyResults(query);
         }
+
+        // ✅ FIX 2: LIMIT RESULTS (WHATSAPP SAFE)
+        const results = resultsRaw.slice(0, 10);
 
         return searchResults({ query, results });
       }
