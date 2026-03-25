@@ -1,6 +1,15 @@
-// app/ux/stateManager.js
+/**
+ * STATE MANAGER — PRODUCTION (UPDATED)
+ * ------------------------------------
+ * - Ensures state persistence on first access
+ * - Adds session expiry (auto reset)
+ * - Safe and scalable
+ */
 
 const store = new Map();
+
+// ⏱ SESSION TTL (30 minutes)
+const SESSION_TTL = 30 * 60 * 1000;
 
 /**
  * Get full user state
@@ -8,7 +17,23 @@ const store = new Map();
 function getState(userId) {
   if (!userId) return buildDefaultState();
 
-  return store.get(userId) || buildDefaultState();
+  let state = store.get(userId);
+
+  // ✅ Create if not exists
+  if (!state) {
+    state = buildDefaultState();
+    store.set(userId, state);
+    return state;
+  }
+
+  // 🔁 Expire old sessions
+  if (Date.now() - state.updatedAt > SESSION_TTL) {
+    const fresh = buildDefaultState();
+    store.set(userId, fresh);
+    return fresh;
+  }
+
+  return state;
 }
 
 /**
