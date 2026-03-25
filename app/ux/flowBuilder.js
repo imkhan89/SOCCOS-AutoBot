@@ -1,4 +1,4 @@
-// app/ux/flowBuilder.js
+// app/ux/flowBuilder.js (FIXED — PRODUCTION SAFE)
 
 // UI Imports
 const mainMenu = require("../../interface/ui/menu/mainMenu");
@@ -11,13 +11,10 @@ const productCard = require("../../interface/ui/product/productCard");
 const productDetails = require("../../interface/ui/product/productDetails");
 const productActions = require("../../interface/ui/product/productActions");
 
-const recoveryMessage = require("../../interface/ui/recovery/recoveryMessage");
-const recoveryReminder = require("../../interface/ui/recovery/recoveryReminder");
-
 const fallbackMessage = require("../../interface/ui/error/fallbackMessage");
 const invalidInput = require("../../interface/ui/error/invalidInput");
 
-// ✅ SERVICES
+// SERVICES
 const { search } = require("../../services/search/productSearch");
 const { getProduct } = require("../../services/product/getProduct");
 
@@ -35,9 +32,21 @@ const {
 async function buildFlow(userId, intent = {}, context = {}) {
   try {
     const { type, payload = {} } = intent;
-    const { cleanedMessage } = context;
+
+    // 🔥 SAFE INPUT EXTRACTION (FIX)
+    const input =
+      payload?.query ||
+      context?.text ||
+      "";
 
     const state = getState(userId);
+
+    /**
+     * 🔥 GLOBAL STATE OVERRIDE (CRITICAL SAFETY)
+     */
+    if (state?.screen === "awaiting_search_input" && type !== "search_product") {
+      return await handleSearch(userId, input);
+    }
 
     switch (type) {
 
@@ -52,7 +61,7 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return categoryMenu();
 
       /**
-       * 🔍 SEARCH BUTTON CLICK (NEW — CRITICAL)
+       * 🔍 SEARCH ENTRY (BUTTON OR TEXT)
        */
       case "search_product":
         setScreen(userId, "awaiting_search_input");
@@ -63,30 +72,11 @@ async function buildFlow(userId, intent = {}, context = {}) {
           meta: { screen: "awaiting_search_input" }
         };
 
-      // ---------------- SEARCH ----------------
-      case "search": {
-        const query =
-          payload.query ||
-          cleanedMessage ||
-          "";
-
-        if (!query || query.length < 2) {
-          return emptyResults("Please type a product name");
-        }
-
-        setQuery(userId, query);
-        setScreen(userId, "search_results");
-
-        const resultsRaw = await search(query);
-
-        if (!resultsRaw || !resultsRaw.length) {
-          return emptyResults(query);
-        }
-
-        const results = resultsRaw.slice(0, 10);
-
-        return searchResults({ query, results });
-      }
+      /**
+       * 🔍 DIRECT SEARCH (TEXT)
+       */
+      case "search":
+        return await handleSearch(userId, input);
 
       // ---------------- VIEW PRODUCT ----------------
       case "view_product": {
@@ -155,6 +145,35 @@ async function buildFlow(userId, intent = {}, context = {}) {
     }
 
   } catch (error) {
+    console.error("❌ FlowBuilder Error:", error.message);
+    return fallbackMessage();
+  }
+}
+
+/**
+ * 🔍 SEARCH HANDLER (ISOLATED — CLEAN ARCHITECTURE)
+ */
+async function handleSearch(userId, query) {
+  try {
+    if (!query || query.length < 2) {
+      return emptyResults("Please type a valid product name");
+    }
+
+    setQuery(userId, query);
+    setScreen(userId, "search_results");
+
+    const resultsRaw = await search(query);
+
+    if (!resultsRaw || !resultsRaw.length) {
+      return emptyResults(query);
+    }
+
+    const results = resultsRaw.slice(0, 10);
+
+    return searchResults({ query, results });
+
+  } catch (error) {
+    console.error("❌ Search Error:", error.message);
     return fallbackMessage();
   }
 }
