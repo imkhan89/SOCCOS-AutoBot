@@ -1,19 +1,15 @@
 /**
- * CLEAN PIPELINE — ORCHESTRATOR ONLY (FIXED)
- * ------------------------------------------
- * - Query normalization added
- * - Async flowBuilder fixed
- * - Response validation fixed
+ * PIPELINE — UPDATED (STRICT ORCHESTRATION ONLY)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
 const logger = require("../../utils/logger");
 
-// ✅ UX ENGINE
+// UX
 const { resolveIntent } = require("../ux/intentResolver");
 const { buildFlow } = require("../ux/flowBuilder");
 
-// ✅ SENDER
+// Sender
 const { sendMessage } = require("../../interface/sender/whatsappSender");
 
 /**
@@ -31,73 +27,71 @@ function normalizeMessage(text = "") {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * ✅ VALIDATE RESPONSE STRUCTURE
+ */
+function isValidResponse(res) {
+  if (!res || typeof res !== "object") return false;
+  if (!res.type) return false;
+
+  return (
+    typeof res.message === "string" ||
+    typeof res.body === "string"
+  );
+}
+
+/**
+ * 🚀 MAIN PIPELINE
+ */
 async function messagePipeline({ from, text }) {
   try {
-    if (!from) {
-      logger.warn("No userId (from) provided");
-      return null;
-    }
+    if (!from) return null;
 
     const rawMessage = text || "";
     const cleanedMessage = normalizeMessage(rawMessage);
 
     /**
-     * ✅ LOAD SESSION
+     * 🧠 SESSION LOAD
      */
-    let session = sessionMemory.getSession(from) || {};
+    let session = sessionMemory.getSession(from);
 
     /**
-     * ✅ UPDATE ACTIVITY
-     */
-    sessionMemory.updateSession(from, {
-      lastActivity: Date.now(),
-    });
-
-    /**
-     * ✅ RATE LIMIT
+     * ⏱️ RATE LIMIT
      */
     if (
-      session.lastMessageTime &&
-      Date.now() - session.lastMessageTime < 1000
+      session?.lastMessageTime &&
+      Date.now() - session.lastMessageTime < 800
     ) {
       return null;
     }
 
     sessionMemory.updateSession(from, {
       lastMessageTime: Date.now(),
+      lastActivity: Date.now(),
     });
 
     /**
-     * 🔄 REFRESH SESSION
-     */
-    session = sessionMemory.getSession(from) || {};
-
-    /**
-     * 🧠 STEP 1 — INTENT (CLEAN INPUT)
+     * 🧠 INTENT RESOLUTION
      */
     const intent = resolveIntent(cleanedMessage);
 
-    logger.info("🧠 Intent:", intent);
-    logger.info("🧹 Cleaned Message:", cleanedMessage);
-
     /**
-     * 🔁 STEP 2 — BUILD FLOW (FIX: AWAIT)
+     * 🔁 FLOW BUILDER
      */
     const response = await buildFlow(from, intent, {
-      rawMessage,
-      cleanedMessage,
+      text: rawMessage,
     });
 
     /**
-     * ❌ FIX: VALIDATION (message OR body)
+     * ❌ INVALID RESPONSE GUARD
      */
-    if (!response || (!response.message && !response.body)) {
-      logger.warn("Invalid response generated", { from, intent });
+    if (!isValidResponse(response)) {
+      logger.warn("Invalid response", { from, intent });
       return null;
     }
 
     /**
-     * ✅ NORMALIZE RESPONSE FOR SENDER
+     * 🧾 NORMALIZE RESPONSE
      */
     const normalizedResponse = {
       ...response,
@@ -105,25 +99,25 @@ async function messagePipeline({ from, text }) {
     };
 
     /**
-     * 📤 STEP 3 — SEND
+     * 📤 SEND (ISOLATED)
      */
     await sendMessage(from, normalizedResponse);
 
     return normalizedResponse;
 
   } catch (error) {
-    logger.error("Pipeline Error:", error);
+    logger.error("PipelineError", error);
 
     const fallback = {
       type: "text",
-      message: "⚠️ Something went wrong. Please try again.",
+      message: "Something went wrong. Please try again.",
       meta: { screen: "pipeline_error" }
     };
 
     try {
       await sendMessage(from, fallback);
-    } catch (sendError) {
-      logger.error("Sender Failed:", sendError);
+    } catch (e) {
+      logger.error("SendFail", e);
     }
 
     return fallback;
