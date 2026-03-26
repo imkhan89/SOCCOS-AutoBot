@@ -1,5 +1,5 @@
 /**
- * SEARCH RESULTS UI — FINAL (STRICT FIXED + WHATSAPP COMPLIANT)
+ * SEARCH RESULTS UI — FINAL (CONVERSION OPTIMIZED + WHATSAPP COMPLIANT)
  */
 
 function searchResults({ query = "", results = [] } = {}) {
@@ -29,7 +29,7 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ BUILD ROWS (WHATSAPP SAFE LIMITS)
+   * ✅ BUILD ROWS (HIGH CTR + WHATSAPP SAFE)
    */
   const rows = topResults
     .map((product, index) => {
@@ -39,11 +39,11 @@ function searchResults({ query = "", results = [] } = {}) {
       return {
         id: `view_${safeId}`,
         title: truncate(product?.title || product?.name || "Product", 24),
-        description: truncate(formatPrice(product?.price), 72)
+        description: truncate(`Price: ${formatPrice(product?.price)}`, 72)
       };
     })
     .filter(Boolean)
-    .slice(0, 10); // ✅ enforce WhatsApp row limit
+    .slice(0, 10);
 
   /**
    * ⚠️ FAILSAFE
@@ -62,11 +62,11 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ RETURN LIST (STRICT CONTRACT)
+   * ✅ RETURN LIST (CONVERSION PUSH)
    */
   return {
     type: "list",
-    message: `Results for "${query}"\n\nSelect a product`,
+    message: `Top results for "${query}"\n\nTap a product to view price & details`,
     sections: [
       {
         title: "Top Matches",
@@ -77,7 +77,8 @@ function searchResults({ query = "", results = [] } = {}) {
       screen: "search_results",
       query,
       resultCount: results.length,
-      funnel_step: "consideration"
+      funnel_step: "consideration",
+      intent: "product_selection"
     }
   };
 }
@@ -106,7 +107,7 @@ function formatPrice(price) {
 }
 
 /**
- * ✂️ TRUNCATE (SAFE LIMIT)
+ * ✂️ TRUNCATE
  */
 function truncate(text = "", limit = 24) {
   if (typeof text !== "string") text = String(text);
