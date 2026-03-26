@@ -1,13 +1,12 @@
-// interface/ui/search/emptyResults.js
-
 const { buildCTAGroup, chatCTA } = require("../components/cta");
 
 function emptyResults(query = "") {
-  const message =
-`❌ *No Results Found*
+  const safeQuery = query || "your search";
+
+  const message = `❌ *No Results Found*
 
 We couldn’t find:
-"${query}"
+"${safeQuery}"
 
 Try a different keyword or explore categories.`;
 
@@ -21,9 +20,9 @@ Try a different keyword or explore categories.`;
     type: "interactive",
     message,
     buttons,
-    meta: {
+    metadata: {
       screen: "empty_results",
-      query
+      query: safeQuery
     }
   };
 }
