@@ -1,5 +1,5 @@
 /**
- * SHOPIFY CLIENT — FINAL (STRICT + SILENT + PRODUCTION SAFE)
+ * SHOPIFY CLIENT — FINAL (STRICT + SILENT + SEARCH COMPATIBLE)
  */
 
 const axios = require("axios");
@@ -12,7 +12,6 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-// CONFIG
 const MAX_RETRIES = 2;
 const TIMEOUT = 10000;
 
@@ -24,7 +23,7 @@ function isEnvValid() {
 }
 
 /**
- * GENERIC REQUEST WRAPPER (SILENT FAIL)
+ * REQUEST WRAPPER
  */
 async function requestWithRetry(config, retries = MAX_RETRIES) {
   try {
@@ -39,6 +38,26 @@ async function requestWithRetry(config, retries = MAX_RETRIES) {
     }
     return null;
   }
+}
+
+/**
+ * 🔥 NORMALIZE PRODUCT (CRITICAL FIX)
+ */
+function normalizeProduct(p = {}) {
+  return {
+    id: p.id,
+    title: p.title || "",
+    body_html: p.body_html || "",
+    vendor: p.vendor || "",
+    product_type: p.product_type || "",
+    tags: p.tags || "",
+    price: Number(p.variants?.[0]?.price) || 0,
+    image: p.image?.src || null,
+    sku: p.variants?.[0]?.sku || "",
+    stock: p.variants?.[0]?.inventory_quantity || 0,
+    available: (p.variants || []).some(v => v.inventory_quantity > 0),
+    variants: Array.isArray(p.variants) ? p.variants : [],
+  };
 }
 
 /**
@@ -77,19 +96,7 @@ async function fetchAllProducts() {
       }
     }
 
-    return allProducts.map((p) => ({
-      id: p.id,
-      title: p.title || "",
-      body_html: p.body_html || "",
-      vendor: p.vendor || "",
-      product_type: p.product_type || "",
-      tags: p.tags || "",
-      price: Number(p.variants?.[0]?.price) || 0,
-      image: p.image?.src || null,
-      sku: p.variants?.[0]?.sku || "",
-      stock: p.variants?.[0]?.inventory_quantity || 0,
-      variants: Array.isArray(p.variants) ? p.variants : [],
-    }));
+    return allProducts.map(normalizeProduct);
 
   } catch (error) {
     return [];
@@ -112,19 +119,7 @@ async function getProductById(id) {
     const p = response?.data?.product;
     if (!p) return null;
 
-    return {
-      id: p.id,
-      title: p.title || "",
-      body_html: p.body_html || "",
-      vendor: p.vendor || "",
-      product_type: p.product_type || "",
-      tags: p.tags || "",
-      price: Number(p.variants?.[0]?.price) || 0,
-      image: p.image?.src || null,
-      sku: p.variants?.[0]?.sku || "",
-      stock: p.variants?.[0]?.inventory_quantity || 0,
-      variants: Array.isArray(p.variants) ? p.variants : [],
-    };
+    return normalizeProduct(p);
 
   } catch (error) {
     return null;
@@ -132,7 +127,7 @@ async function getProductById(id) {
 }
 
 /**
- * OPTIONAL SKU FETCH (SAFE FALLBACK)
+ * GET PRODUCT BY SKU
  */
 async function getProductBySKU(sku) {
   try {
