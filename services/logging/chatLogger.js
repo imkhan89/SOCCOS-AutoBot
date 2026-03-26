@@ -1,24 +1,26 @@
 /**
- * SAE-V2 CHAT LOGGER (FINAL — CLEAN + SAFE + MEMORY PROTECTED)
+ * SAE-V2 CHAT LOGGER (UPDATED — HARD CAP + MEMORY SAFE)
  */
 
 const MAX_LOGS = 1000;
 const logs = [];
 
 /**
- * 🔒 SAFE PUSH (PREVENT MEMORY LEAK)
+ * 🔒 STRICT SAFE PUSH (HARD CAP ENFORCED)
  */
 function safePush(entry) {
-  logs.push(entry);
+  if (!entry) return;
 
-  // ✅ prevent memory overflow
-  if (logs.length > MAX_LOGS) {
-    logs.shift();
+  // Prevent overflow BEFORE push (more stable under load)
+  if (logs.length >= MAX_LOGS) {
+    logs.splice(0, logs.length - MAX_LOGS + 1);
   }
+
+  logs.push(entry);
 }
 
 /**
- * 🧾 CHAT LOG (CLEAN)
+ * 🧾 CHAT LOG
  */
 function logChat({ userId, message, response }) {
   try {
@@ -32,14 +34,17 @@ function logChat({ userId, message, response }) {
         typeof response === "string"
           ? response.trim()
           : response?.message || null,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(), // faster + lighter than ISO string
     };
 
     safePush(entry);
 
-    console.log("📘 Chat Log:", entry);
+    // Minimal logging (avoid heavy console in production)
+    if (process.env.NODE_ENV !== "production") {
+      console.log("CHAT:", entry);
+    }
   } catch (error) {
-    console.error("❌ Chat Logger Error:", error.message);
+    console.error("ChatLoggerError:", error.message);
   }
 }
 
@@ -52,14 +57,16 @@ function logEvent(event) {
 
     const entry = {
       ...event,
-      timestamp: new Date().toISOString(),
+      timestamp: Date.now(),
     };
 
     safePush(entry);
 
-    console.log("📊 Event:", entry);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("EVENT:", entry);
+    }
   } catch (error) {
-    console.error("❌ Event Logger Error:", error.message);
+    console.error("EventLoggerError:", error.message);
   }
 }
 
@@ -78,15 +85,15 @@ function logClick(userId, product) {
       handle: product?.handle || null,
     });
   } catch (error) {
-    console.error("❌ Click Logger Error:", error.message);
+    console.error("ClickLoggerError:", error.message);
   }
 }
 
 /**
- * 📥 GET LOGS
+ * 📥 GET LOGS (READ-ONLY COPY)
  */
 function getLogs() {
-  return logs;
+  return [...logs]; // prevent external mutation
 }
 
 module.exports = {
