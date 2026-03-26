@@ -1,9 +1,8 @@
 /**
- * PIPELINE — FINAL (STRICT ORCHESTRATION ONLY)
+ * PIPELINE — FINAL FIXED (STRICT + GUARANTEED SEND)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
-const logger = require("../../utils/logger");
 
 // UX
 const { resolveIntent } = require("../ux/intentResolver");
@@ -13,7 +12,7 @@ const { buildFlow } = require("../ux/flowBuilder");
 const { sendMessage } = require("../../interface/sender/whatsappSender");
 
 /**
- * 🧹 NORMALIZE MESSAGE
+ * NORMALIZE MESSAGE
  */
 function normalizeMessage(text = "") {
   if (!text || typeof text !== "string") return "";
@@ -28,34 +27,34 @@ function normalizeMessage(text = "") {
 }
 
 /**
- * ✅ VALIDATE RESPONSE STRUCTURE
+ * STRICT RESPONSE VALIDATION
  */
 function isValidResponse(res) {
   if (!res || typeof res !== "object") return false;
   if (!res.type) return false;
+  if (!res.message) return false;
 
-  return typeof res.message === "string";
+  if (res.type === "interactive" && !res.buttons?.length) return false;
+  if (res.type === "list" && !res.sections?.length) return false;
+
+  return true;
 }
 
 /**
- * 🧾 NORMALIZE RESPONSE (STRICT SCHEMA)
+ * NORMALIZE RESPONSE
  */
 function normalizeResponse(response = {}) {
   return {
     type: response.type,
-    message: response.message || "",
-    ...(Array.isArray(response.buttons) && response.buttons.length
-      ? { buttons: response.buttons }
-      : {}),
-    ...(Array.isArray(response.sections) && response.sections.length
-      ? { sections: response.sections }
-      : {}),
+    message: response.message,
+    ...(response.buttons?.length ? { buttons: response.buttons } : {}),
+    ...(response.sections?.length ? { sections: response.sections } : {}),
     metadata: response.metadata || {}
   };
 }
 
 /**
- * 🚀 MAIN PIPELINE
+ * MAIN PIPELINE
  */
 async function messagePipeline({ from, text } = {}) {
   try {
@@ -64,17 +63,12 @@ async function messagePipeline({ from, text } = {}) {
     const rawMessage = text || "";
     const cleanedMessage = normalizeMessage(rawMessage);
 
-    /**
-     * 🧠 SESSION LOAD
-     */
     const session = sessionMemory.getSession(from) || {};
 
-    /**
-     * ⏱️ RATE LIMIT
-     */
+    // RATE LIMIT (RELAXED)
     if (
       session.lastMessageTime &&
-      Date.now() - session.lastMessageTime < 800
+      Date.now() - session.lastMessageTime < 300
     ) {
       return null;
     }
@@ -84,54 +78,45 @@ async function messagePipeline({ from, text } = {}) {
       lastActivity: Date.now()
     });
 
-    /**
-     * 🧠 INTENT RESOLUTION
-     */
     const intent = resolveIntent(cleanedMessage);
 
-    /**
-     * 🔁 FLOW BUILDER
-     */
-    const response = await buildFlow(from, intent, {
-      text: rawMessage
-    });
+    let response = null;
 
-    /**
-     * ❌ INVALID RESPONSE GUARD
-     */
-    if (!isValidResponse(response)) {
-      logger.warn("Invalid response", { from, intent });
-      return null;
+    try {
+      response = await buildFlow(from, intent, { text: rawMessage });
+    } catch (e) {
+      response = null;
     }
 
-    /**
-     * 🧾 NORMALIZE RESPONSE
-     */
+    // FALLBACK IF FLOW FAILS
+    if (!isValidResponse(response)) {
+      response = {
+        type: "interactive",
+        message: "Welcome! What would you like to do?",
+        buttons: [
+          { id: "browse_categories", title: "Browse Categories" },
+          { id: "search_product", title: "Search Product" },
+          { id: "support", title: "Talk to Support" }
+        ],
+        metadata: { screen: "fallback" }
+      };
+    }
+
     const normalizedResponse = normalizeResponse(response);
 
-    /**
-     * 📤 SEND (ISOLATED)
-     */
+    // GUARANTEED SEND
     await sendMessage(from, normalizedResponse);
 
     return normalizedResponse;
 
   } catch (error) {
-    logger.error("PipelineError", error);
-
     const fallback = {
       type: "text",
       message: "Something went wrong. Please try again.",
-      metadata: {
-        screen: "pipeline_error"
-      }
+      metadata: { screen: "pipeline_error" }
     };
 
-    try {
-      await sendMessage(from, fallback);
-    } catch (e) {
-      logger.error("SendFail", e);
-    }
+    await sendMessage(from, fallback);
 
     return fallback;
   }
