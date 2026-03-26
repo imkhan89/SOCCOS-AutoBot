@@ -1,7 +1,3 @@
-/**
- * SEARCH RESULTS UI — FINAL FIXED (PRODUCTION SAFE)
- */
-
 function searchResults({ query = "", results = [] } = {}) {
   if (!Array.isArray(results)) results = [];
 
@@ -14,7 +10,7 @@ function searchResults({ query = "", results = [] } = {}) {
     return {
       type: "text",
       message: `❌ No products found for "${query}".\n\nTry another keyword.`,
-      meta: {
+      metadata: {
         screen: "search_results",
         query,
         resultCount: 0
@@ -23,19 +19,21 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ BUILD SAFE ROWS (CRITICAL FIX)
+   * ✅ BUILD SAFE ROWS
    */
   const rows = topResults
     .map((product, index) => {
-      const safeId = sanitizeId(product.id, index);
+      const safeId = sanitizeId(product?.id, index);
+
+      if (!safeId) return null;
 
       return {
-        id: `view_${safeId}`, // ✅ ALWAYS SAFE
-        title: truncate(product.title || product.name || "Product"),
-        description: formatPrice(product.price)
+        id: `view_${safeId}`,
+        title: truncate(product?.title || product?.name || "Product"),
+        description: formatPrice(product?.price)
       };
     })
-    .filter(row => row.id); // extra safety
+    .filter(Boolean);
 
   /**
    * ⚠️ FAILSAFE
@@ -43,7 +41,12 @@ function searchResults({ query = "", results = [] } = {}) {
   if (!rows.length) {
     return {
       type: "text",
-      message: "⚠️ Unable to display products. Please try again."
+      message: "⚠️ Unable to display products. Please try again.",
+      metadata: {
+        screen: "search_results",
+        query,
+        resultCount: results.length
+      }
     };
   }
 
@@ -52,9 +55,11 @@ function searchResults({ query = "", results = [] } = {}) {
    */
   return {
     type: "list",
-    header: "🔍 Search Results",
-    body: `Results for "${query}"`,
-    footer: "Select a product to view details",
+    message: `🔍 *Search Results*
+
+Results for "${query}"
+
+Select a product to view details`,
     buttonText: "View Products",
     sections: [
       {
@@ -62,7 +67,7 @@ function searchResults({ query = "", results = [] } = {}) {
         rows
       }
     ],
-    meta: {
+    metadata: {
       screen: "search_results",
       query,
       resultCount: results.length
@@ -71,12 +76,11 @@ function searchResults({ query = "", results = [] } = {}) {
 }
 
 /**
- * 🔒 SANITIZE ID (CRITICAL FIX)
+ * 🔒 SANITIZE ID
  */
 function sanitizeId(id, fallbackIndex) {
   if (!id) return `fallback_${fallbackIndex}`;
 
-  // Handle Shopify GID
   if (typeof id === "string" && id.includes("gid://")) {
     const parts = id.split("/");
     return parts[parts.length - 1];
@@ -89,7 +93,8 @@ function sanitizeId(id, fallbackIndex) {
  * 💰 FORMAT PRICE
  */
 function formatPrice(price) {
-  const num = Number(price) || 0;
+  const num = Number(price);
+  if (!num) return "PKR 0";
   return `PKR ${num}`;
 }
 
