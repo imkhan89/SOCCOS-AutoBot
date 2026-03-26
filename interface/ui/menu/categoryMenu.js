@@ -1,10 +1,7 @@
-// interface/ui/menu/categoryMenu.js
-
 const { buildCTAGroup } = require("../components/cta");
 
 function categoryMenu() {
-  const message =
-`📦 *Browse Categories*
+  const message = `📦 *Browse Categories*
 
 Select a category to explore products:`;
 
@@ -18,7 +15,7 @@ Select a category to explore products:`;
     type: "interactive",
     message,
     buttons,
-    meta: {
+    metadata: {
       screen: "category_menu"
     }
   };
