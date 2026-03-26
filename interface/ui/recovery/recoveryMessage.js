@@ -1,5 +1,3 @@
-// interface/ui/recovery/recoveryMessage.js
-
 const { pricingBlock } = require("../components/pricing");
 const { trustBlock } = require("../components/trust");
 const { deliveryInfo } = require("../components/delivery");
@@ -13,34 +11,36 @@ function recoveryMessage(product = {}) {
     price,
     originalPrice,
     discount
-  } = product;
+  } = product || {};
 
-  const message =
-`🛒 *You left something behind...*
+  const safeId = id ? String(id) : "unknown";
+  const safeName = name || "Your selected product";
 
-*${name || "Your selected product"}*
+  const message = `🛒 *You left something behind...*
 
-${pricingBlock({ price, originalPrice, discount })}
+*${safeName}*
 
-${limitedOffer()}
+${pricingBlock({ price, originalPrice, discount }) || ""}
 
-${deliveryInfo()}
+${limitedOffer() || ""}
 
-${trustBlock()}
+${deliveryInfo() || ""}
 
-Complete your order before it’s gone!`;
+${trustBlock() || ""}
+
+Complete your order before it’s gone!`.trim();
 
   const buttons = buildCTAGroup([
-    primaryCTA("✅ Complete Order", `confirm_${id}`),
-    chatCTA("💬 Need Help?", `recovery_help_${id}`)
+    primaryCTA("✅ Complete Order", `confirm_${safeId}`),
+    chatCTA("💬 Need Help?", `recovery_help_${safeId}`)
   ]);
 
   return {
     type: "interactive",
-    message,
+    message: message || "Complete your order before it’s gone!",
     buttons,
-    meta: {
-      productId: id,
+    metadata: {
+      productId: safeId,
       screen: "recovery_message"
     }
   };
