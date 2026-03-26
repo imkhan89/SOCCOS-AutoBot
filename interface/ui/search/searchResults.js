@@ -1,30 +1,39 @@
+/**
+ * SEARCH RESULTS UI — FINAL (FUNNEL OPTIMIZED + STRICT + HIGH CTR)
+ */
+
 function searchResults({ query = "", results = [] } = {}) {
   if (!Array.isArray(results)) results = [];
 
   const topResults = results.slice(0, 10);
 
   /**
-   * ❌ NO RESULTS
+   * ❌ NO RESULTS (RECOVERY OPTIMIZED)
    */
   if (topResults.length === 0) {
     return {
-      type: "text",
-      message: `❌ No products found for "${query}".\n\nTry another keyword.`,
+      type: "interactive",
+      message: `No products found for "${query}". Try another search or browse categories.`,
+      buttons: [
+        { id: "search_product", title: "Search Again" },
+        { id: "browse_categories", title: "Browse Categories" },
+        { id: "support", title: "Talk to Support" }
+      ],
       metadata: {
         screen: "search_results",
         query,
-        resultCount: 0
+        resultCount: 0,
+        funnel_step: "recovery"
       }
     };
   }
 
   /**
-   * ✅ BUILD SAFE ROWS
+   * ✅ BUILD ROWS (HIGH CLARITY)
    */
   const rows = topResults
     .map((product, index) => {
       const safeId = sanitizeId(product?.id, index);
-
       if (!safeId) return null;
 
       return {
@@ -41,36 +50,34 @@ function searchResults({ query = "", results = [] } = {}) {
   if (!rows.length) {
     return {
       type: "text",
-      message: "⚠️ Unable to display products. Please try again.",
+      message: "Unable to display products. Please try again.",
       metadata: {
         screen: "search_results",
         query,
-        resultCount: results.length
+        resultCount: results.length,
+        funnel_step: "error"
       }
     };
   }
 
   /**
-   * ✅ RETURN LIST
+   * ✅ RETURN LIST (CONVERSION OPTIMIZED)
    */
   return {
     type: "list",
-    message: `🔍 *Search Results*
-
-Results for "${query}"
-
-Select a product to view details`,
+    message: `Results for "${query}"\n\nSelect a product to view details`,
     buttonText: "View Products",
     sections: [
       {
-        title: "Available Products",
+        title: "Top Matches",
         rows
       }
     ],
     metadata: {
       screen: "search_results",
       query,
-      resultCount: results.length
+      resultCount: results.length,
+      funnel_step: "consideration"
     }
   };
 }
