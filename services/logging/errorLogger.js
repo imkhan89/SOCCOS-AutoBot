@@ -1,31 +1,53 @@
 /**
- * SAE-V2 ERROR LOGGER
- * --------------------------------
- * Central error tracking
+ * SAE-V2 ERROR LOGGER (UPDATED — HARD CAP + MEMORY SAFE)
  */
 
+const MAX_ERRORS = 1000;
 const errors = [];
 
+/**
+ * 🔒 STRICT SAFE PUSH
+ */
+function safePush(entry) {
+  if (!entry) return;
+
+  // Enforce hard cap BEFORE push
+  if (errors.length >= MAX_ERRORS) {
+    errors.splice(0, errors.length - MAX_ERRORS + 1);
+  }
+
+  errors.push(entry);
+}
+
+/**
+ * 🚨 ERROR LOGGER
+ */
 function logError(context, error) {
   try {
     const entry = {
-      context,
+      context: context || "UNKNOWN_CONTEXT",
       message: error?.message || "Unknown error",
-      stack: error?.stack || "",
-      timestamp: new Date().toISOString(),
+      stack: error?.stack || null,
+      timestamp: Date.now(),
     };
 
-    errors.push(entry);
+    safePush(entry);
 
-    console.error("🚨 Error Log:", entry);
+    // Reduce console noise in production
+    if (process.env.NODE_ENV !== "production") {
+      console.error("ERROR:", entry);
+    }
 
   } catch (err) {
-    console.error("❌ Error Logger Failed:", err.message);
+    console.error("ErrorLoggerFailure:", err.message);
   }
 }
 
+/**
+ * 📥 GET ERRORS (READ-ONLY COPY)
+ */
 function getErrors() {
-  return errors;
+  return [...errors];
 }
 
 module.exports = {
