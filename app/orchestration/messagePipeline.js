@@ -1,5 +1,5 @@
 /**
- * PIPELINE — FINAL FIXED (STRICT + GUARANTEED SEND)
+ * PIPELINE — OPTIMIZED (FUNNEL + STRICT + GUARANTEED SEND)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -37,11 +37,13 @@ function isValidResponse(res) {
   if (res.type === "interactive" && !res.buttons?.length) return false;
   if (res.type === "list" && !res.sections?.length) return false;
 
+  if (!res.metadata) return false;
+
   return true;
 }
 
 /**
- * NORMALIZE RESPONSE
+ * NORMALIZE RESPONSE (STRICT CONTRACT)
  */
 function normalizeResponse(response = {}) {
   return {
@@ -50,6 +52,22 @@ function normalizeResponse(response = {}) {
     ...(response.buttons?.length ? { buttons: response.buttons } : {}),
     ...(response.sections?.length ? { sections: response.sections } : {}),
     metadata: response.metadata || {}
+  };
+}
+
+/**
+ * FALLBACK RESPONSE (FUNNEL OPTIMIZED)
+ */
+function getFallbackResponse() {
+  return {
+    type: "interactive",
+    message: "Find the right auto part fast. What do you need?",
+    buttons: [
+      { id: "search_product", title: "Search Product" },
+      { id: "browse_categories", title: "Browse Categories" },
+      { id: "talk_support", title: "Talk to Support" }
+    ],
+    metadata: { screen: "fallback", funnel: "entry" }
   };
 }
 
@@ -75,7 +93,8 @@ async function messagePipeline({ from, text } = {}) {
 
     sessionMemory.updateSession(from, {
       lastMessageTime: Date.now(),
-      lastActivity: Date.now()
+      lastActivity: Date.now(),
+      lastUserMessage: rawMessage
     });
 
     const intent = resolveIntent(cleanedMessage);
@@ -90,16 +109,7 @@ async function messagePipeline({ from, text } = {}) {
 
     // FALLBACK IF FLOW FAILS
     if (!isValidResponse(response)) {
-      response = {
-        type: "interactive",
-        message: "Welcome! What would you like to do?",
-        buttons: [
-          { id: "browse_categories", title: "Browse Categories" },
-          { id: "search_product", title: "Search Product" },
-          { id: "support", title: "Talk to Support" }
-        ],
-        metadata: { screen: "fallback" }
-      };
+      response = getFallbackResponse();
     }
 
     const normalizedResponse = normalizeResponse(response);
