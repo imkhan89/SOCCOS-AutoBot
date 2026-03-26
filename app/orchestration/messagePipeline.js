@@ -1,5 +1,5 @@
 /**
- * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED)
+ * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED + PRODUCT VIEW SUPPORT)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -13,6 +13,10 @@ const { sendMessage } = require("../../interface/sender/whatsappSender");
 
 // ✅ TRACKING
 const { trackEvent } = require("../../services/analytics/eventTracker");
+
+// ✅ PRODUCT SERVICE + UI
+const { getProduct } = require("../../services/product/getProduct");
+const productView = require("../../interface/ui/product/productView");
 
 /**
  * NORMALIZE MESSAGE
@@ -79,6 +83,18 @@ function getFallbackResponse() {
 }
 
 /**
+ * 🧠 DETECT PRODUCT VIEW INTENT (FROM BUTTON/LIST)
+ */
+function extractProductId(text = "") {
+  if (!text) return null;
+
+  const match = text.match(/view_(.+)|buy_(.+)|ask_(.+)/i);
+  if (!match) return null;
+
+  return match[1] || match[2] || match[3] || null;
+}
+
+/**
  * MAIN PIPELINE
  */
 async function messagePipeline({ from, text } = {}) {
@@ -108,6 +124,34 @@ async function messagePipeline({ from, text } = {}) {
       lastActivity: Date.now(),
       lastUserMessage: rawMessage
     });
+
+    /**
+     * ✅ PRODUCT VIEW SHORT-CIRCUIT (HIGH PRIORITY)
+     */
+    const productId = extractProductId(rawMessage);
+
+    if (productId) {
+      const product = await getProduct({ id: productId });
+
+      const response = productView({
+        product,
+        source: "search"
+      });
+
+      const normalizedResponse = normalizeResponse(response);
+
+      await sendMessage(from, normalizedResponse);
+
+      trackEvent({
+        user: from,
+        event: "product_view",
+        productId,
+        screen: "product_view",
+        funnel_step: "decision"
+      });
+
+      return normalizedResponse;
+    }
 
     /**
      * INTENT RESOLUTION
