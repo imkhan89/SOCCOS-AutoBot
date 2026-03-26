@@ -1,5 +1,5 @@
 /**
- * SAE-V2 CORE PIPELINE (FINAL - HARDENED + LOGGING)
+ * SAE-V2 CORE PIPELINE (FINAL - HARDENED + CLEAN)
  * --------------------------------
  * Orchestrator ONLY
  * NO UI, NO business logic
@@ -17,10 +17,26 @@ const middleware = require("../../services/middleware/middleware.integration");
 const { logChat } = require("../../services/logging/chatLogger");
 const { logError } = require("../../services/logging/errorLogger");
 
-async function run({ from, text }) {
+/**
+ * 🧾 NORMALIZE RESPONSE (STRICT SCHEMA)
+ */
+function normalizeResponse(response = {}) {
+  return {
+    type: response.type,
+    message: response.message || "",
+    ...(Array.isArray(response.buttons) && response.buttons.length
+      ? { buttons: response.buttons }
+      : {}),
+    ...(Array.isArray(response.sections) && response.sections.length
+      ? { sections: response.sections }
+      : {}),
+    metadata: response.metadata || {}
+  };
+}
+
+async function run({ from, text } = {}) {
   try {
     if (!from || !text) {
-      console.warn("⚠️ Missing input:", { from, text });
       return null;
     }
 
@@ -31,8 +47,7 @@ async function run({ from, text }) {
     try {
       processed = await middleware.process({ from, text });
     } catch (err) {
-      console.error("❌ Middleware failed:", err.message);
-      processed = { text }; // fallback
+      processed = { text };
     }
 
     const cleanText = (processed?.text || text || "")
@@ -41,16 +56,17 @@ async function run({ from, text }) {
       .toLowerCase();
 
     if (!cleanText) {
-      const response = {
+      const response = normalizeResponse({
         type: "text",
         message: "Please enter a valid input",
-      };
+        metadata: { screen: "invalid_input" }
+      });
 
       logChat({ userId: from, message: text, response });
       return response;
     }
 
-    const session = sessionMemory.getSession(from);
+    const session = sessionMemory.getSession(from) || {};
 
     let response = null;
 
@@ -60,8 +76,9 @@ async function run({ from, text }) {
     if (session.order && session.order.step) {
       response = await menuIntegration.handleOrder(from, cleanText);
       if (response) {
-        logChat({ userId: from, message: cleanText, response });
-        return response;
+        const normalized = normalizeResponse(response);
+        logChat({ userId: from, message: cleanText, response: normalized });
+        return normalized;
       }
     }
 
@@ -70,8 +87,9 @@ async function run({ from, text }) {
      */
     response = await menuIntegration.handleMenu(from, cleanText);
     if (response) {
-      logChat({ userId: from, message: cleanText, response });
-      return response;
+      const normalized = normalizeResponse(response);
+      logChat({ userId: from, message: cleanText, response: normalized });
+      return normalized;
     }
 
     /**
@@ -79,8 +97,9 @@ async function run({ from, text }) {
      */
     response = await searchIntegration.handleSearch(from, cleanText);
     if (response) {
-      logChat({ userId: from, message: cleanText, response });
-      return response;
+      const normalized = normalizeResponse(response);
+      logChat({ userId: from, message: cleanText, response: normalized });
+      return normalized;
     }
 
     /**
@@ -88,30 +107,33 @@ async function run({ from, text }) {
      */
     response = await aiIntegration.handleAI(from, cleanText);
     if (response) {
-      logChat({ userId: from, message: cleanText, response });
-      return response;
+      const normalized = normalizeResponse(response);
+      logChat({ userId: from, message: cleanText, response: normalized });
+      return normalized;
     }
 
     /**
      * DEFAULT RESPONSE
      */
-    response = {
+    const defaultResponse = normalizeResponse({
       type: "text",
       message: "Invalid input. Please try again.",
-    };
+      metadata: { screen: "invalid_input" }
+    });
 
-    logChat({ userId: from, message: cleanText, response });
+    logChat({ userId: from, message: cleanText, response: defaultResponse });
 
-    return response;
+    return defaultResponse;
 
   } catch (error) {
-    console.error("❌ Pipeline Error:", error.message);
-
     logError("pipeline", error);
 
     return {
       type: "text",
       message: "System error. Please try again later.",
+      metadata: {
+        screen: "pipeline_error"
+      }
     };
   }
 }
