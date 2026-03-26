@@ -1,5 +1,5 @@
 /**
- * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED + PRODUCT VIEW SUPPORT)
+ * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED + PURCHASE FLOW)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -14,9 +14,10 @@ const { sendMessage } = require("../../interface/sender/whatsappSender");
 // ✅ TRACKING
 const { trackEvent } = require("../../services/analytics/eventTracker");
 
-// ✅ PRODUCT SERVICE + UI
+// ✅ PRODUCT + CART UI
 const { getProduct } = require("../../services/product/getProduct");
 const productView = require("../../interface/ui/product/productView");
+const addToCart = require("../../interface/ui/cart/addToCart");
 
 /**
  * NORMALIZE MESSAGE
@@ -83,15 +84,18 @@ function getFallbackResponse() {
 }
 
 /**
- * 🧠 DETECT PRODUCT VIEW INTENT (FROM BUTTON/LIST)
+ * 🔍 EXTRACT ACTION IDS
  */
-function extractProductId(text = "") {
-  if (!text) return null;
+function extractAction(text = "") {
+  if (!text) return {};
 
-  const match = text.match(/view_(.+)|buy_(.+)|ask_(.+)/i);
-  if (!match) return null;
+  const match = text.match(/(view|buy|ask|checkout)_(.+)/i);
+  if (!match) return {};
 
-  return match[1] || match[2] || match[3] || null;
+  return {
+    action: match[1],
+    id: match[2]
+  };
 }
 
 /**
@@ -126,31 +130,79 @@ async function messagePipeline({ from, text } = {}) {
     });
 
     /**
-     * ✅ PRODUCT VIEW SHORT-CIRCUIT (HIGH PRIORITY)
+     * 🔥 ACTION HANDLER (HIGHEST PRIORITY)
      */
-    const productId = extractProductId(rawMessage);
+    const { action, id } = extractAction(rawMessage);
 
-    if (productId) {
-      const product = await getProduct({ id: productId });
+    if (action && id) {
+      const product = await getProduct({ id });
 
-      const response = productView({
-        product,
-        source: "search"
-      });
+      if (action === "view") {
+        const response = productView({ product, source: "search" });
+        const normalized = normalizeResponse(response);
 
-      const normalizedResponse = normalizeResponse(response);
+        await sendMessage(from, normalized);
 
-      await sendMessage(from, normalizedResponse);
+        trackEvent({
+          user: from,
+          event: "product_view",
+          productId: id,
+          screen: "product_view",
+          funnel_step: "decision"
+        });
 
-      trackEvent({
-        user: from,
-        event: "product_view",
-        productId,
-        screen: "product_view",
-        funnel_step: "decision"
-      });
+        return normalized;
+      }
 
-      return normalizedResponse;
+      if (action === "buy") {
+        const response = addToCart({ product });
+        const normalized = normalizeResponse(response);
+
+        await sendMessage(from, normalized);
+
+        trackEvent({
+          user: from,
+          event: "add_to_cart",
+          productId: id,
+          screen: "add_to_cart",
+          funnel_step: "intent"
+        });
+
+        return normalized;
+      }
+
+      if (action === "checkout") {
+        const response = {
+          type: "interactive",
+          message:
+            "🧾 Checkout\n\nConfirm your order with our team now.\nFast processing & delivery available.",
+          buttons: [
+            { id: "confirm_order", title: "Confirm Order" },
+            { id: "continue_shopping", title: "More Products" },
+            { id: "support", title: "Need Help?" }
+          ],
+          metadata: {
+            screen: "checkout",
+            productId: id,
+            funnel_step: "purchase",
+            intent: "high"
+          }
+        };
+
+        const normalized = normalizeResponse(response);
+
+        await sendMessage(from, normalized);
+
+        trackEvent({
+          user: from,
+          event: "checkout_started",
+          productId: id,
+          screen: "checkout",
+          funnel_step: "purchase"
+        });
+
+        return normalized;
+      }
     }
 
     /**
@@ -194,7 +246,7 @@ async function messagePipeline({ from, text } = {}) {
      */
     await sendMessage(from, normalizedResponse);
 
-    // ✅ TRACK BOT RESPONSE (CRITICAL)
+    // ✅ TRACK BOT RESPONSE
     trackEvent({
       user: from,
       event: "bot_response",
