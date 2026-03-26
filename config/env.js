@@ -1,19 +1,16 @@
 /**
- * ENV CONFIG — UPDATED (STRICT + SAFE)
+ * ENV CONFIG — FINAL (PRODUCTION SAFE)
  */
 
 require("dotenv").config();
 
 /**
- * 🔒 SAFE ENV FETCH
+ * SAFE ENV FETCH (NO LOGS)
  */
 function getEnv(key, { required = false, defaultValue = null } = {}) {
   const value = process.env[key];
 
   if (!value) {
-    if (required) {
-      console.error(`ENV Missing: ${key}`);
-    }
     return defaultValue;
   }
 
@@ -21,14 +18,14 @@ function getEnv(key, { required = false, defaultValue = null } = {}) {
 }
 
 /**
- * 🔍 VALIDATE GROUP
+ * VALIDATE GROUP (SILENT)
  */
-function validateGroup(name, obj, requiredKeys = []) {
-  requiredKeys.forEach((key) => {
+function validateGroup(obj, requiredKeys = []) {
+  for (const key of requiredKeys) {
     if (!obj[key]) {
-      console.error(`ENV ${name} Missing: ${key}`);
+      process.exit(1);
     }
-  });
+  }
 }
 
 /**
@@ -37,7 +34,7 @@ function validateGroup(name, obj, requiredKeys = []) {
 const env = {
   app: {
     port: Number(getEnv("PORT", { defaultValue: 3000 })),
-    nodeEnv: getEnv("NODE_ENV", { defaultValue: "development" }),
+    nodeEnv: getEnv("NODE_ENV", { defaultValue: "production" }),
   },
 
   whatsapp: {
@@ -65,9 +62,9 @@ const env = {
 };
 
 /**
- * 🔍 VALIDATION (CRITICAL GROUPS)
+ * VALIDATION (CRITICAL ONLY)
  */
-validateGroup("WHATSAPP", env.whatsapp, [
+validateGroup(env.whatsapp, [
   "token",
   "phoneNumberId",
   "verifyToken",
