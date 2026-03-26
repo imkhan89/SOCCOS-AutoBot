@@ -1,5 +1,5 @@
 /**
- * SAE-V2 CHAT LOGGER (UPDATED — HARD CAP + MEMORY SAFE)
+ * SAE-V2 CHAT LOGGER (FINAL — HARD CAP + PRODUCTION SAFE)
  */
 
 const MAX_LOGS = 1000;
@@ -11,7 +11,6 @@ const logs = [];
 function safePush(entry) {
   if (!entry) return;
 
-  // Prevent overflow BEFORE push (more stable under load)
   if (logs.length >= MAX_LOGS) {
     logs.splice(0, logs.length - MAX_LOGS + 1);
   }
@@ -22,7 +21,7 @@ function safePush(entry) {
 /**
  * 🧾 CHAT LOG
  */
-function logChat({ userId, message, response }) {
+function logChat({ userId, message, response } = {}) {
   try {
     if (!userId || !message) return;
 
@@ -34,46 +33,39 @@ function logChat({ userId, message, response }) {
         typeof response === "string"
           ? response.trim()
           : response?.message || null,
-      timestamp: Date.now(), // faster + lighter than ISO string
+      timestamp: Date.now()
     };
 
     safePush(entry);
 
-    // Minimal logging (avoid heavy console in production)
-    if (process.env.NODE_ENV !== "production") {
-      console.log("CHAT:", entry);
-    }
   } catch (error) {
-    console.error("ChatLoggerError:", error.message);
+    // silent fail-safe
   }
 }
 
 /**
  * 📊 GENERIC EVENT LOGGER
  */
-function logEvent(event) {
+function logEvent(event = {}) {
   try {
     if (!event || typeof event !== "object") return;
 
     const entry = {
       ...event,
-      timestamp: Date.now(),
+      timestamp: Date.now()
     };
 
     safePush(entry);
 
-    if (process.env.NODE_ENV !== "production") {
-      console.log("EVENT:", entry);
-    }
   } catch (error) {
-    console.error("EventLoggerError:", error.message);
+    // silent fail-safe
   }
 }
 
 /**
  * 🖱️ PRODUCT CLICK TRACKING
  */
-function logClick(userId, product) {
+function logClick(userId, product = {}) {
   try {
     if (!userId || !product) return;
 
@@ -82,10 +74,11 @@ function logClick(userId, product) {
       userId: String(userId).trim(),
       productId: product?.id || null,
       title: product?.title || null,
-      handle: product?.handle || null,
+      handle: product?.handle || null
     });
+
   } catch (error) {
-    console.error("ClickLoggerError:", error.message);
+    // silent fail-safe
   }
 }
 
@@ -93,12 +86,12 @@ function logClick(userId, product) {
  * 📥 GET LOGS (READ-ONLY COPY)
  */
 function getLogs() {
-  return [...logs]; // prevent external mutation
+  return [...logs];
 }
 
 module.exports = {
   logChat,
   logEvent,
   logClick,
-  getLogs,
+  getLogs
 };
