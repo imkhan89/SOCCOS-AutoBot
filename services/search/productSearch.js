@@ -1,5 +1,5 @@
 /**
- * PRODUCT SEARCH SERVICE — UPDATED (SAFE + CONTROLLED)
+ * PRODUCT SEARCH SERVICE — FINAL (FUNNEL OPTIMIZED + STRICT + FAST)
  */
 
 const { fetchAllProducts } = require("../../integrations/shopifyClient");
@@ -33,6 +33,7 @@ async function search(input, options = {}) {
     if (cleanedQuery.length < 2) return [];
 
     const tokens = cleanedQuery.split(" ").filter(t => t.length > 1);
+    if (!tokens.length) return [];
 
     const products = await getProductsCached();
 
@@ -42,11 +43,13 @@ async function search(input, options = {}) {
       const product = products[i];
 
       const score = scoreProduct(product, tokens);
+
       if (score > 0) {
         results.push({ product, score });
       }
     }
 
+    // 🚀 SORT BY BEST MATCH
     results.sort((a, b) => b.score - a.score);
 
     return results.slice(0, limit).map(r => r.product);
@@ -58,25 +61,48 @@ async function search(input, options = {}) {
 }
 
 /**
- * 🧠 SCORING ENGINE
+ * 🧠 SCORING ENGINE (CONVERSION OPTIMIZED)
  */
 function scoreProduct(product, tokens) {
   if (!product || !tokens.length) return 0;
 
   const text = buildSearchText(product);
   const title = (product.title || "").toLowerCase();
+  const tags = (product.tags || "").toLowerCase();
 
   let score = 0;
+  let matchedTokens = 0;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
 
-    if (text.includes(token)) score += 2;
-    if (title.includes(token)) score += 3;
+    if (title.includes(token)) {
+      score += 5; // 🎯 strong intent
+      matchedTokens++;
+      continue;
+    }
+
+    if (tags.includes(token)) {
+      score += 3;
+      matchedTokens++;
+      continue;
+    }
+
+    if (text.includes(token)) {
+      score += 1;
+      matchedTokens++;
+    }
   }
 
-  const allMatch = tokens.every(token => text.includes(token));
-  return allMatch ? score : 0;
+  // 🚫 ensure minimum relevance
+  if (matchedTokens === 0) return 0;
+
+  // 🎯 boost full match
+  if (matchedTokens === tokens.length) {
+    score += 5;
+  }
+
+  return score;
 }
 
 /**
@@ -106,7 +132,6 @@ async function getProductsCached() {
     return CACHE;
   }
 
-  // 🚫 Prevent oversized cache
   CACHE = products.slice(0, MAX_CACHE_SIZE);
   LAST_FETCH = now;
 
