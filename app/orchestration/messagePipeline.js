@@ -1,5 +1,5 @@
 /**
- * PIPELINE — FINAL (ARCHITECTURE SAFE + FUNNEL OPTIMIZED)
+ * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -10,6 +10,9 @@ const { buildFlow } = require("../ux/flowBuilder");
 
 // Sender
 const { sendMessage } = require("../../interface/sender/whatsappSender");
+
+// ✅ TRACKING
+const { trackEvent } = require("../../services/analytics/eventTracker");
 
 /**
  * NORMALIZE MESSAGE
@@ -111,6 +114,14 @@ async function messagePipeline({ from, text } = {}) {
      */
     const intent = resolveIntent(cleanedMessage);
 
+    // ✅ TRACK USER ENTRY
+    trackEvent({
+      user: from,
+      event: "user_message",
+      screen: "unknown",
+      funnel_step: "entry"
+    });
+
     let response = null;
 
     /**
@@ -138,6 +149,14 @@ async function messagePipeline({ from, text } = {}) {
      * GUARANTEED SEND
      */
     await sendMessage(from, normalizedResponse);
+
+    // ✅ TRACK BOT RESPONSE (CRITICAL)
+    trackEvent({
+      user: from,
+      event: "bot_response",
+      screen: normalizedResponse?.metadata?.screen,
+      funnel_step: normalizedResponse?.metadata?.funnel_step
+    });
 
     return normalizedResponse;
 
