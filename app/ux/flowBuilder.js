@@ -1,5 +1,5 @@
 /**
- * FLOW BUILDER — UPDATED (CONTROLLED + CLEAN UX LAYER)
+ * FLOW BUILDER — FINAL (CONTROLLED + CLEAN UX LAYER)
  */
 
 // UI
@@ -43,11 +43,11 @@ async function buildFlow(userId, intent = {}, context = {}) {
       context?.text ||
       "";
 
-    const state = getState(userId);
+    const state = getState(userId) || {};
 
     // 🔒 STATE OVERRIDE (SEARCH MODE LOCK)
     if (
-      state?.screen === "awaiting_search_input" &&
+      state.screen === "awaiting_search_input" &&
       type !== "search_product" &&
       input
     ) {
@@ -70,7 +70,9 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return {
           type: "text",
           message: "What product are you looking for?",
-          meta: { screen: "awaiting_search_input" }
+          metadata: {
+            screen: "awaiting_search_input"
+          }
         };
 
       case "search":
@@ -121,7 +123,9 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return {
           type: "text",
           message: "Your order has been placed. Our team will contact you shortly.",
-          meta: { screen: "order_confirmed" }
+          metadata: {
+            screen: "order_confirmed"
+          }
         };
 
       case "support":
@@ -130,7 +134,9 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return {
           type: "text",
           message: "Our support team will assist you shortly. Please describe your issue.",
-          meta: { screen: "support" }
+          metadata: {
+            screen: "support"
+          }
         };
 
       case "unknown":
