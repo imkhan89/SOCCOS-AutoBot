@@ -1,5 +1,5 @@
 /**
- * PIPELINE — UPDATED (STRICT ORCHESTRATION ONLY)
+ * PIPELINE — FINAL (STRICT ORCHESTRATION ONLY)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -34,16 +34,30 @@ function isValidResponse(res) {
   if (!res || typeof res !== "object") return false;
   if (!res.type) return false;
 
-  return (
-    typeof res.message === "string" ||
-    typeof res.body === "string"
-  );
+  return typeof res.message === "string";
+}
+
+/**
+ * 🧾 NORMALIZE RESPONSE (STRICT SCHEMA)
+ */
+function normalizeResponse(response = {}) {
+  return {
+    type: response.type,
+    message: response.message || "",
+    ...(Array.isArray(response.buttons) && response.buttons.length
+      ? { buttons: response.buttons }
+      : {}),
+    ...(Array.isArray(response.sections) && response.sections.length
+      ? { sections: response.sections }
+      : {}),
+    metadata: response.metadata || {}
+  };
 }
 
 /**
  * 🚀 MAIN PIPELINE
  */
-async function messagePipeline({ from, text }) {
+async function messagePipeline({ from, text } = {}) {
   try {
     if (!from) return null;
 
@@ -53,13 +67,13 @@ async function messagePipeline({ from, text }) {
     /**
      * 🧠 SESSION LOAD
      */
-    let session = sessionMemory.getSession(from);
+    const session = sessionMemory.getSession(from) || {};
 
     /**
      * ⏱️ RATE LIMIT
      */
     if (
-      session?.lastMessageTime &&
+      session.lastMessageTime &&
       Date.now() - session.lastMessageTime < 800
     ) {
       return null;
@@ -67,7 +81,7 @@ async function messagePipeline({ from, text }) {
 
     sessionMemory.updateSession(from, {
       lastMessageTime: Date.now(),
-      lastActivity: Date.now(),
+      lastActivity: Date.now()
     });
 
     /**
@@ -79,7 +93,7 @@ async function messagePipeline({ from, text }) {
      * 🔁 FLOW BUILDER
      */
     const response = await buildFlow(from, intent, {
-      text: rawMessage,
+      text: rawMessage
     });
 
     /**
@@ -93,10 +107,7 @@ async function messagePipeline({ from, text }) {
     /**
      * 🧾 NORMALIZE RESPONSE
      */
-    const normalizedResponse = {
-      ...response,
-      message: response.message || response.body || "",
-    };
+    const normalizedResponse = normalizeResponse(response);
 
     /**
      * 📤 SEND (ISOLATED)
@@ -111,7 +122,9 @@ async function messagePipeline({ from, text }) {
     const fallback = {
       type: "text",
       message: "Something went wrong. Please try again.",
-      meta: { screen: "pipeline_error" }
+      metadata: {
+        screen: "pipeline_error"
+      }
     };
 
     try {
