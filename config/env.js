@@ -1,21 +1,34 @@
 /**
- * SOCCOS-AutoBot
- * Environment Config (FINAL - PRODUCTION SAFE)
+ * ENV CONFIG — UPDATED (STRICT + SAFE)
  */
 
 require("dotenv").config();
 
 /**
- * SAFE ENV FETCH (NO CRASH)
+ * 🔒 SAFE ENV FETCH
  */
-function getEnv(key, required = false) {
+function getEnv(key, { required = false, defaultValue = null } = {}) {
   const value = process.env[key];
 
-  if (!value && required) {
-    console.warn(`⚠️ Missing env: ${key}`);
+  if (!value) {
+    if (required) {
+      console.error(`ENV Missing: ${key}`);
+    }
+    return defaultValue;
   }
 
-  return value || null;
+  return value;
+}
+
+/**
+ * 🔍 VALIDATE GROUP
+ */
+function validateGroup(name, obj, requiredKeys = []) {
+  requiredKeys.forEach((key) => {
+    if (!obj[key]) {
+      console.error(`ENV ${name} Missing: ${key}`);
+    }
+  });
 }
 
 /**
@@ -23,21 +36,20 @@ function getEnv(key, required = false) {
  */
 const env = {
   app: {
-    port: process.env.PORT || 3000,
-    nodeEnv: process.env.NODE_ENV || "development",
+    port: Number(getEnv("PORT", { defaultValue: 3000 })),
+    nodeEnv: getEnv("NODE_ENV", { defaultValue: "development" }),
   },
 
   whatsapp: {
-    token: getEnv("WHATSAPP_TOKEN", true),
-    phoneNumberId: getEnv("WHATSAPP_PHONE_NUMBER_ID", true),
-    verifyToken: getEnv("WHATSAPP_VERIFY_TOKEN", true),
-    apiVersion: process.env.WHATSAPP_API_VERSION || "v18.0",
+    token: getEnv("WHATSAPP_TOKEN", { required: true }),
+    phoneNumberId: getEnv("WHATSAPP_PHONE_NUMBER_ID", { required: true }),
+    verifyToken: getEnv("WHATSAPP_VERIFY_TOKEN", { required: true }),
+    apiVersion: getEnv("WHATSAPP_API_VERSION", { defaultValue: "v18.0" }),
   },
 
-  // OPTIONAL
   openai: {
     apiKey: getEnv("OPENAI_API_KEY"),
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: getEnv("OPENAI_MODEL", { defaultValue: "gpt-4o-mini" }),
   },
 
   algolia: {
@@ -51,6 +63,15 @@ const env = {
     accessToken: getEnv("SHOPIFY_ACCESS_TOKEN"),
   },
 };
+
+/**
+ * 🔍 VALIDATION (CRITICAL GROUPS)
+ */
+validateGroup("WHATSAPP", env.whatsapp, [
+  "token",
+  "phoneNumberId",
+  "verifyToken",
+]);
 
 Object.freeze(env);
 
