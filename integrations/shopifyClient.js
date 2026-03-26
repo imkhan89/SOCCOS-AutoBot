@@ -1,5 +1,5 @@
 /**
- * SHOPIFY CLIENT — UPDATED (SAFE + CONTROLLED)
+ * SHOPIFY CLIENT — FINAL (STRICT + SILENT + PRODUCTION SAFE)
  */
 
 const axios = require("axios");
@@ -12,19 +12,19 @@ const headers = {
   "Content-Type": "application/json",
 };
 
-// 🔁 CONFIG
+// CONFIG
 const MAX_RETRIES = 2;
 const TIMEOUT = 10000;
 
 /**
- * 🔒 ENV VALIDATION
+ * ENV VALIDATION
  */
 function isEnvValid() {
   return env?.shopify?.storeUrl && env?.shopify?.accessToken;
 }
 
 /**
- * 🔁 GENERIC REQUEST WRAPPER
+ * GENERIC REQUEST WRAPPER (SILENT FAIL)
  */
 async function requestWithRetry(config, retries = MAX_RETRIES) {
   try {
@@ -37,19 +37,16 @@ async function requestWithRetry(config, retries = MAX_RETRIES) {
     if (retries > 0) {
       return requestWithRetry(config, retries - 1);
     }
-    console.error("ShopifyRequestError:", error?.message);
     return null;
   }
 }
 
 /**
- * 🔥 FETCH ALL PRODUCTS
+ * FETCH ALL PRODUCTS
  */
 async function fetchAllProducts() {
   try {
-    if (!isEnvValid()) {
-      return [];
-    }
+    if (!isEnvValid()) return [];
 
     let allProducts = [];
     let url = `${BASE_URL}/products.json?limit=250`;
@@ -82,32 +79,91 @@ async function fetchAllProducts() {
 
     return allProducts.map((p) => ({
       id: p.id,
-      title: p.title,
-      body_html: p.body_html,
-      vendor: p.vendor,
-      product_type: p.product_type,
-      tags: p.tags,
-      price: p.variants?.[0]?.price || 0,
+      title: p.title || "",
+      body_html: p.body_html || "",
+      vendor: p.vendor || "",
+      product_type: p.product_type || "",
+      tags: p.tags || "",
+      price: Number(p.variants?.[0]?.price) || 0,
       image: p.image?.src || null,
       sku: p.variants?.[0]?.sku || "",
       stock: p.variants?.[0]?.inventory_quantity || 0,
-      variants: p.variants || [],
+      variants: Array.isArray(p.variants) ? p.variants : [],
     }));
 
   } catch (error) {
-    console.error("ShopifyFetchError:", error.message);
     return [];
   }
 }
 
 /**
- * 🛒 CREATE ORDER
+ * GET PRODUCT BY ID
+ */
+async function getProductById(id) {
+  try {
+    if (!isEnvValid() || !id) return null;
+
+    const response = await requestWithRetry({
+      method: "GET",
+      url: `${BASE_URL}/products/${id}.json`,
+      headers,
+    });
+
+    const p = response?.data?.product;
+    if (!p) return null;
+
+    return {
+      id: p.id,
+      title: p.title || "",
+      body_html: p.body_html || "",
+      vendor: p.vendor || "",
+      product_type: p.product_type || "",
+      tags: p.tags || "",
+      price: Number(p.variants?.[0]?.price) || 0,
+      image: p.image?.src || null,
+      sku: p.variants?.[0]?.sku || "",
+      stock: p.variants?.[0]?.inventory_quantity || 0,
+      variants: Array.isArray(p.variants) ? p.variants : [],
+    };
+
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * OPTIONAL SKU FETCH (SAFE FALLBACK)
+ */
+async function getProductBySKU(sku) {
+  try {
+    if (!isEnvValid() || !sku) return null;
+
+    const products = await fetchAllProducts();
+
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
+
+      if (
+        Array.isArray(product.variants) &&
+        product.variants.some(v => v.sku === sku)
+      ) {
+        return product;
+      }
+    }
+
+    return null;
+
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * CREATE ORDER
  */
 async function createOrder(orderData) {
   try {
-    if (!isEnvValid()) {
-      return null;
-    }
+    if (!isEnvValid()) return null;
 
     const variantId = orderData?.product?.variants?.[0]?.id;
     if (!variantId) return null;
@@ -141,12 +197,13 @@ async function createOrder(orderData) {
     return response?.data?.order || null;
 
   } catch (error) {
-    console.error("ShopifyOrderError:", error.message);
     return null;
   }
 }
 
 module.exports = {
   fetchAllProducts,
+  getProductById,
+  getProductBySKU,
   createOrder,
 };
