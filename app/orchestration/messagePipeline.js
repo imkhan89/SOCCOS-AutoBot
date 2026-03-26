@@ -1,5 +1,5 @@
 /**
- * PIPELINE — FINAL (FORCE RESPONSE + FUNNEL OPTIMIZED + PURCHASE FLOW)
+ * PIPELINE — FINAL (SEARCH FIX + FORCE RESPONSE + FULL FUNNEL)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
@@ -18,6 +18,10 @@ const { trackEvent } = require("../../services/analytics/eventTracker");
 const { getProduct } = require("../../services/product/getProduct");
 const productView = require("../../interface/ui/product/productView");
 const addToCart = require("../../interface/ui/cart/addToCart");
+
+// 🔥 SEARCH SERVICE + UI (NEW)
+const { searchProducts } = require("../../services/search/productSearch");
+const searchResultsUI = require("../../interface/ui/search/searchResults");
 
 /**
  * NORMALIZE MESSAGE
@@ -64,7 +68,7 @@ function normalizeResponse(response = {}) {
 }
 
 /**
- * FALLBACK (ENTRY SAFE)
+ * FALLBACK
  */
 function getFallbackResponse() {
   return {
@@ -111,13 +115,13 @@ async function messagePipeline({ from, text } = {}) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * FIX: REMOVE HARD BLOCK
+     * REMOVE HARD BLOCK
      */
     if (
       session.lastMessageTime &&
       Date.now() - session.lastMessageTime < 100
     ) {
-      // do nothing — allow flow
+      // allow flow
     }
 
     /**
@@ -130,7 +134,7 @@ async function messagePipeline({ from, text } = {}) {
     });
 
     /**
-     * ACTION HANDLER (TOP PRIORITY)
+     * ACTION HANDLER
      */
     const { action, id } = extractAction(rawMessage);
 
@@ -193,9 +197,7 @@ async function messagePipeline({ from, text } = {}) {
       }
 
       const normalized = normalizeResponse(response);
-
       await sendMessage(from, normalized);
-
       return normalized;
     }
 
@@ -212,7 +214,23 @@ async function messagePipeline({ from, text } = {}) {
     }
 
     /**
-     * FORCE RESPONSE (CRITICAL FIX)
+     * 🔥 SEARCH DIRECT FALLBACK (CRITICAL FIX)
+     */
+    if (!isValidResponse(response) && cleanedMessage) {
+      try {
+        const results = await searchProducts(cleanedMessage);
+
+        response = searchResultsUI({
+          query: cleanedMessage,
+          results: Array.isArray(results) ? results : []
+        });
+      } catch (e) {
+        response = null;
+      }
+    }
+
+    /**
+     * FINAL FALLBACK
      */
     if (!isValidResponse(response)) {
       response = getFallbackResponse();
@@ -220,9 +238,6 @@ async function messagePipeline({ from, text } = {}) {
 
     const normalizedResponse = normalizeResponse(response);
 
-    /**
-     * GUARANTEED SEND
-     */
     await sendMessage(from, normalizedResponse);
 
     trackEvent({
@@ -245,7 +260,6 @@ async function messagePipeline({ from, text } = {}) {
     };
 
     await sendMessage(from, fallback);
-
     return fallback;
   }
 }
