@@ -1,20 +1,20 @@
 /**
- * PIPELINE — FINAL (TRACKING ENABLED + FUNNEL OPTIMIZED + PURCHASE FLOW)
+ * PIPELINE — FINAL (FORCE RESPONSE + FUNNEL OPTIMIZED + PURCHASE FLOW)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
 
-// UX (EXISTING ARCHITECTURE SAFE)
+// UX
 const { resolveIntent } = require("../ux/intentResolver");
 const { buildFlow } = require("../ux/flowBuilder");
 
 // Sender
 const { sendMessage } = require("../../interface/sender/whatsappSender");
 
-// ✅ TRACKING
+// Tracking
 const { trackEvent } = require("../../services/analytics/eventTracker");
 
-// ✅ PRODUCT + CART UI
+// Product + UI
 const { getProduct } = require("../../services/product/getProduct");
 const productView = require("../../interface/ui/product/productView");
 const addToCart = require("../../interface/ui/cart/addToCart");
@@ -51,7 +51,7 @@ function isValidResponse(res) {
 }
 
 /**
- * NORMALIZE RESPONSE (STRICT CONTRACT)
+ * NORMALIZE RESPONSE
  */
 function normalizeResponse(response = {}) {
   return {
@@ -64,12 +64,12 @@ function normalizeResponse(response = {}) {
 }
 
 /**
- * FUNNEL-OPTIMIZED FALLBACK
+ * FALLBACK (ENTRY SAFE)
  */
 function getFallbackResponse() {
   return {
     type: "interactive",
-    message: "Quickly find your auto part. Choose an option:",
+    message: "Welcome! What are you looking for today?",
     buttons: [
       { id: "search_product", title: "Search Product" },
       { id: "browse_categories", title: "Browse Categories" },
@@ -84,12 +84,12 @@ function getFallbackResponse() {
 }
 
 /**
- * 🔍 EXTRACT ACTION IDS
+ * EXTRACT ACTION
  */
 function extractAction(text = "") {
   if (!text) return {};
 
-  const match = text.match(/(view|buy|ask|checkout)_(.+)/i);
+  const match = text.match(/(view|buy|checkout)_(.+)/i);
   if (!match) return {};
 
   return {
@@ -111,13 +111,13 @@ async function messagePipeline({ from, text } = {}) {
     const session = sessionMemory.getSession(from) || {};
 
     /**
-     * RATE LIMIT
+     * FIX: REMOVE HARD BLOCK
      */
     if (
       session.lastMessageTime &&
-      Date.now() - session.lastMessageTime < 300
+      Date.now() - session.lastMessageTime < 100
     ) {
-      return null;
+      // do nothing — allow flow
     }
 
     /**
@@ -130,18 +130,17 @@ async function messagePipeline({ from, text } = {}) {
     });
 
     /**
-     * 🔥 ACTION HANDLER (HIGHEST PRIORITY)
+     * ACTION HANDLER (TOP PRIORITY)
      */
     const { action, id } = extractAction(rawMessage);
 
     if (action && id) {
       const product = await getProduct({ id });
 
-      if (action === "view") {
-        const response = productView({ product, source: "search" });
-        const normalized = normalizeResponse(response);
+      let response = null;
 
-        await sendMessage(from, normalized);
+      if (action === "view") {
+        response = productView({ product, source: "search" });
 
         trackEvent({
           user: from,
@@ -150,15 +149,10 @@ async function messagePipeline({ from, text } = {}) {
           screen: "product_view",
           funnel_step: "decision"
         });
-
-        return normalized;
       }
 
       if (action === "buy") {
-        const response = addToCart({ product });
-        const normalized = normalizeResponse(response);
-
-        await sendMessage(from, normalized);
+        response = addToCart({ product });
 
         trackEvent({
           user: from,
@@ -167,18 +161,14 @@ async function messagePipeline({ from, text } = {}) {
           screen: "add_to_cart",
           funnel_step: "intent"
         });
-
-        return normalized;
       }
 
       if (action === "checkout") {
-        const response = {
+        response = {
           type: "interactive",
-          message:
-            "🧾 Checkout\n\nConfirm your order with our team now.\nFast processing & delivery available.",
+          message: "Confirm your order with our team now.",
           buttons: [
             { id: "confirm_order", title: "Confirm Order" },
-            { id: "continue_shopping", title: "More Products" },
             { id: "support", title: "Need Help?" }
           ],
           metadata: {
@@ -189,10 +179,6 @@ async function messagePipeline({ from, text } = {}) {
           }
         };
 
-        const normalized = normalizeResponse(response);
-
-        await sendMessage(from, normalized);
-
         trackEvent({
           user: from,
           event: "checkout_started",
@@ -200,45 +186,38 @@ async function messagePipeline({ from, text } = {}) {
           screen: "checkout",
           funnel_step: "purchase"
         });
-
-        return normalized;
       }
+
+      if (!isValidResponse(response)) {
+        response = getFallbackResponse();
+      }
+
+      const normalized = normalizeResponse(response);
+
+      await sendMessage(from, normalized);
+
+      return normalized;
     }
 
     /**
-     * INTENT RESOLUTION
+     * INTENT FLOW
      */
-    const intent = resolveIntent(cleanedMessage);
-
-    // ✅ TRACK USER ENTRY
-    trackEvent({
-      user: from,
-      event: "user_message",
-      screen: "unknown",
-      funnel_step: "entry"
-    });
-
     let response = null;
 
-    /**
-     * FLOW EXECUTION
-     */
     try {
+      const intent = resolveIntent(cleanedMessage);
       response = await buildFlow(from, intent, { text: rawMessage });
     } catch (e) {
       response = null;
     }
 
     /**
-     * FALLBACK SAFETY
+     * FORCE RESPONSE (CRITICAL FIX)
      */
     if (!isValidResponse(response)) {
       response = getFallbackResponse();
     }
 
-    /**
-     * FINAL NORMALIZATION
-     */
     const normalizedResponse = normalizeResponse(response);
 
     /**
@@ -246,7 +225,6 @@ async function messagePipeline({ from, text } = {}) {
      */
     await sendMessage(from, normalizedResponse);
 
-    // ✅ TRACK BOT RESPONSE
     trackEvent({
       user: from,
       event: "bot_response",
@@ -259,7 +237,7 @@ async function messagePipeline({ from, text } = {}) {
   } catch (error) {
     const fallback = {
       type: "text",
-      message: "Something went wrong. Please try again.",
+      message: "Please try again.",
       metadata: {
         screen: "pipeline_error",
         funnel_step: "error"
