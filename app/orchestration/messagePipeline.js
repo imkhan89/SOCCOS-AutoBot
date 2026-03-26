@@ -1,10 +1,10 @@
 /**
- * PIPELINE — OPTIMIZED (FUNNEL + STRICT + GUARANTEED SEND)
+ * PIPELINE — FINAL (ARCHITECTURE SAFE + FUNNEL OPTIMIZED)
  */
 
 const sessionMemory = require("../../data/memory/sessionMemory");
 
-// UX
+// UX (EXISTING ARCHITECTURE SAFE)
 const { resolveIntent } = require("../ux/intentResolver");
 const { buildFlow } = require("../ux/flowBuilder");
 
@@ -34,10 +34,10 @@ function isValidResponse(res) {
   if (!res.type) return false;
   if (!res.message) return false;
 
-  if (res.type === "interactive" && !res.buttons?.length) return false;
-  if (res.type === "list" && !res.sections?.length) return false;
+  if (res.type === "interactive" && (!res.buttons || res.buttons.length === 0)) return false;
+  if (res.type === "list" && (!res.sections || res.sections.length === 0)) return false;
 
-  if (!res.metadata) return false;
+  if (!res.metadata || typeof res.metadata !== "object") return false;
 
   return true;
 }
@@ -49,25 +49,29 @@ function normalizeResponse(response = {}) {
   return {
     type: response.type,
     message: response.message,
-    ...(response.buttons?.length ? { buttons: response.buttons } : {}),
-    ...(response.sections?.length ? { sections: response.sections } : {}),
+    ...(response.buttons && response.buttons.length ? { buttons: response.buttons } : {}),
+    ...(response.sections && response.sections.length ? { sections: response.sections } : {}),
     metadata: response.metadata || {}
   };
 }
 
 /**
- * FALLBACK RESPONSE (FUNNEL OPTIMIZED)
+ * FUNNEL-OPTIMIZED FALLBACK
  */
 function getFallbackResponse() {
   return {
     type: "interactive",
-    message: "Find the right auto part fast. What do you need?",
+    message: "Quickly find your auto part. Choose an option:",
     buttons: [
       { id: "search_product", title: "Search Product" },
       { id: "browse_categories", title: "Browse Categories" },
-      { id: "talk_support", title: "Talk to Support" }
+      { id: "support", title: "Talk to Support" }
     ],
-    metadata: { screen: "fallback", funnel: "entry" }
+    metadata: {
+      screen: "fallback",
+      funnel_step: "entry",
+      intent: "unknown"
+    }
   };
 }
 
@@ -83,7 +87,9 @@ async function messagePipeline({ from, text } = {}) {
 
     const session = sessionMemory.getSession(from) || {};
 
-    // RATE LIMIT (RELAXED)
+    /**
+     * RATE LIMIT
+     */
     if (
       session.lastMessageTime &&
       Date.now() - session.lastMessageTime < 300
@@ -91,30 +97,46 @@ async function messagePipeline({ from, text } = {}) {
       return null;
     }
 
+    /**
+     * SESSION UPDATE
+     */
     sessionMemory.updateSession(from, {
       lastMessageTime: Date.now(),
       lastActivity: Date.now(),
       lastUserMessage: rawMessage
     });
 
+    /**
+     * INTENT RESOLUTION
+     */
     const intent = resolveIntent(cleanedMessage);
 
     let response = null;
 
+    /**
+     * FLOW EXECUTION
+     */
     try {
       response = await buildFlow(from, intent, { text: rawMessage });
     } catch (e) {
       response = null;
     }
 
-    // FALLBACK IF FLOW FAILS
+    /**
+     * FALLBACK SAFETY
+     */
     if (!isValidResponse(response)) {
       response = getFallbackResponse();
     }
 
+    /**
+     * FINAL NORMALIZATION
+     */
     const normalizedResponse = normalizeResponse(response);
 
-    // GUARANTEED SEND
+    /**
+     * GUARANTEED SEND
+     */
     await sendMessage(from, normalizedResponse);
 
     return normalizedResponse;
@@ -123,7 +145,10 @@ async function messagePipeline({ from, text } = {}) {
     const fallback = {
       type: "text",
       message: "Something went wrong. Please try again.",
-      metadata: { screen: "pipeline_error" }
+      metadata: {
+        screen: "pipeline_error",
+        funnel_step: "error"
+      }
     };
 
     await sendMessage(from, fallback);
