@@ -1,5 +1,3 @@
-// interface/ui/product/productCard.js
-
 const { pricingBlock } = require("../components/pricing");
 const { trustBlock } = require("../components/trust");
 const { stockUrgency } = require("../components/urgency");
@@ -14,29 +12,30 @@ function productCard(product = {}) {
     originalPrice,
     discount,
     stock
-  } = product;
+  } = product || {};
 
-  const message =
-`🚘 *${name || "Product"}*
+  const safeId = id ? String(id) : "unknown";
 
-${pricingBlock({ price, originalPrice, discount })}
-${stockUrgency(stock)}
+  const message = `🚘 *${name || "Product"}*
 
-${deliveryInfo()}
+${pricingBlock({ price, originalPrice, discount }) || ""}
+${stockUrgency(stock) || ""}
 
-${trustBlock()}`;
+${deliveryInfo() || ""}
+
+${trustBlock() || ""}`.trim();
 
   const buttons = buildCTAGroup([
-    primaryCTA("🛒 Order Now", `order_${id}`),
-    secondaryCTA("📄 Details", `details_${id}`)
+    primaryCTA("🛒 Order Now", `order_${safeId}`),
+    secondaryCTA("📄 Details", `details_${safeId}`)
   ]);
 
   return {
     type: "interactive",
-    message,
+    message: message || "Product details unavailable.",
     buttons,
-    meta: {
-      productId: id,
+    metadata: {
+      productId: safeId,
       screen: "product_card"
     }
   };
