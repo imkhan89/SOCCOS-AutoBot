@@ -1,28 +1,53 @@
 /**
- * SHOPIFY CLIENT — FULL CATALOG (FINAL)
- * -------------------------------------
- * - Fetches ALL products using pagination
- * - NO filtering here
- * - Clean structured output
+ * SHOPIFY CLIENT — UPDATED (SAFE + CONTROLLED)
  */
 
 const axios = require("axios");
 const env = require("../config/env");
 
-const BASE_URL = `https://${env.shopify.storeUrl}/admin/api/2024-01`;
+const BASE_URL = `https://${env?.shopify?.storeUrl}/admin/api/2024-01`;
 
 const headers = {
-  "X-Shopify-Access-Token": env.shopify.accessToken,
+  "X-Shopify-Access-Token": env?.shopify?.accessToken,
   "Content-Type": "application/json",
 };
 
+// 🔁 CONFIG
+const MAX_RETRIES = 2;
+const TIMEOUT = 10000;
+
 /**
- * 🔥 FETCH ALL PRODUCTS (PAGINATION — CRITICAL)
+ * 🔒 ENV VALIDATION
+ */
+function isEnvValid() {
+  return env?.shopify?.storeUrl && env?.shopify?.accessToken;
+}
+
+/**
+ * 🔁 GENERIC REQUEST WRAPPER
+ */
+async function requestWithRetry(config, retries = MAX_RETRIES) {
+  try {
+    const response = await axios({
+      ...config,
+      timeout: TIMEOUT,
+    });
+    return response;
+  } catch (error) {
+    if (retries > 0) {
+      return requestWithRetry(config, retries - 1);
+    }
+    console.error("ShopifyRequestError:", error?.message);
+    return null;
+  }
+}
+
+/**
+ * 🔥 FETCH ALL PRODUCTS
  */
 async function fetchAllProducts() {
   try {
-    if (!env.shopify.storeUrl || !env.shopify.accessToken) {
-      console.warn("⚠️ Shopify not configured");
+    if (!isEnvValid()) {
       return [];
     }
 
@@ -30,32 +55,31 @@ async function fetchAllProducts() {
     let url = `${BASE_URL}/products.json?limit=250`;
 
     while (url) {
-      const response = await axios.get(url, { headers });
+      const response = await requestWithRetry({
+        method: "GET",
+        url,
+        headers,
+      });
 
-      const products = response.data.products || [];
+      if (!response) break;
 
+      const products = response?.data?.products || [];
       allProducts.push(...products);
 
-      // 🔥 Handle pagination
-      const linkHeader = response.headers.link;
+      const linkHeader = response.headers?.link;
 
       if (linkHeader && linkHeader.includes('rel="next"')) {
         const nextLink = linkHeader
           .split(",")
-          .find(l => l.includes('rel="next"'))
-          .match(/<(.+)>/)[1];
+          .find((l) => l.includes('rel="next"'))
+          ?.match(/<(.+)>/)?.[1];
 
-        url = nextLink;
+        url = nextLink || null;
       } else {
         url = null;
       }
     }
 
-    console.log("🧾 Total Shopify Products:", allProducts.length);
-
-    /**
-     * ✅ NORMALIZE OUTPUT
-     */
     return allProducts.map((p) => ({
       id: p.id,
       title: p.title,
@@ -71,27 +95,22 @@ async function fetchAllProducts() {
     }));
 
   } catch (error) {
-    console.error("❌ Shopify Fetch Error:", error.message);
+    console.error("ShopifyFetchError:", error.message);
     return [];
   }
 }
 
 /**
- * 🛒 CREATE ORDER (UNCHANGED)
+ * 🛒 CREATE ORDER
  */
-async function createOrder(orderData, retries = 2) {
+async function createOrder(orderData) {
   try {
-    if (!env.shopify.storeUrl || !env.shopify.accessToken) {
-      console.warn("⚠️ Shopify not configured");
+    if (!isEnvValid()) {
       return null;
     }
 
     const variantId = orderData?.product?.variants?.[0]?.id;
-
-    if (!variantId) {
-      console.error("❌ Missing variant ID");
-      return null;
-    }
+    if (!variantId) return null;
 
     const payload = {
       order: {
@@ -102,33 +121,27 @@ async function createOrder(orderData, retries = 2) {
           },
         ],
         customer: {
-          first_name: orderData.name || "Customer",
+          first_name: orderData?.name || "Customer",
         },
         shipping_address: {
-          address1: orderData.address || "N/A",
+          address1: orderData?.address || "N/A",
           country: "Pakistan",
         },
         financial_status: "pending",
       },
     };
 
-    const response = await axios.post(
-      `${BASE_URL}/orders.json`,
-      payload,
-      { headers }
-    );
+    const response = await requestWithRetry({
+      method: "POST",
+      url: `${BASE_URL}/orders.json`,
+      data: payload,
+      headers,
+    });
 
-    console.log("✅ Shopify Order Created:", response.data.order.id);
-
-    return response.data.order;
+    return response?.data?.order || null;
 
   } catch (error) {
-    if (retries > 0) {
-      console.warn("🔁 Retrying Shopify order...");
-      return createOrder(orderData, retries - 1);
-    }
-
-    console.error("❌ Shopify Failed:", error.message);
+    console.error("ShopifyOrderError:", error.message);
     return null;
   }
 }
