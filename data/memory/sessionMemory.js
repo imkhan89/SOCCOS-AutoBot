@@ -1,9 +1,10 @@
 /**
- * SOCCOS-AutoBot
- * Session Memory (FINAL — HARDENED + SCALE READY)
+ * SESSION MEMORY — UPDATED (HARD CAP + SAFE GC)
  */
 
 const SESSION_TTL = 1000 * 60 * 60 * 24; // 24 hours
+const MAX_SESSIONS = 10000;
+
 const sessions = {};
 
 /**
@@ -26,11 +27,10 @@ function createDefaultSession() {
       isProcessing: false,
     },
 
-    // ✅ Recovery System
     lastActivity: Date.now(),
     recoverySent: false,
+    recoveryTimestamp: null,
 
-    // ✅ Anti-spam
     lastMessageTime: null,
 
     updatedAt: Date.now(),
@@ -38,18 +38,32 @@ function createDefaultSession() {
 }
 
 /**
- * 🧹 CLEAN EXPIRED SESSIONS (AUTO GC)
+ * 🧹 CLEAN EXPIRED + ENFORCE MAX SIZE
  */
 function cleanupSessions() {
   const now = Date.now();
 
-  for (const userId in sessions) {
+  const userIds = Object.keys(sessions);
+
+  // TTL cleanup
+  for (let i = 0; i < userIds.length; i++) {
+    const userId = userIds[i];
     const session = sessions[userId];
 
     if (!session?.updatedAt) continue;
 
     if (now - session.updatedAt > SESSION_TTL) {
       delete sessions[userId];
+    }
+  }
+
+  // Hard cap enforcement
+  const keys = Object.keys(sessions);
+  if (keys.length > MAX_SESSIONS) {
+    const excess = keys.length - MAX_SESSIONS;
+
+    for (let i = 0; i < excess; i++) {
+      delete sessions[keys[i]]; // remove oldest (insertion order)
     }
   }
 }
@@ -60,7 +74,7 @@ function cleanupSessions() {
 function getSession(userId) {
   if (!userId) return createDefaultSession();
 
-  cleanupSessions(); // ✅ auto cleanup
+  cleanupSessions();
 
   if (!sessions[userId]) {
     sessions[userId] = createDefaultSession();
@@ -70,10 +84,10 @@ function getSession(userId) {
 }
 
 /**
- * GET ALL SESSIONS (for recovery engine)
+ * GET ALL SESSIONS
  */
 function getAllSessions() {
-  cleanupSessions(); // ✅ keep memory clean
+  cleanupSessions();
   return sessions;
 }
 
@@ -94,21 +108,26 @@ function updateSession(userId, data = {}) {
       ...(data.context || {}),
     },
 
-    lastResults: data.lastResults || session.lastResults,
+    lastResults: Array.isArray(data.lastResults)
+      ? data.lastResults
+      : session.lastResults,
 
     order: {
       ...session.order,
       ...(data.order || {}),
     },
 
-    // ✅ ALWAYS refresh activity (critical for recovery)
     lastActivity: Date.now(),
 
-    // preserve recovery flag unless explicitly changed
     recoverySent:
       typeof data.recoverySent === "boolean"
         ? data.recoverySent
         : session.recoverySent,
+
+    recoveryTimestamp:
+      typeof data.recoveryTimestamp === "number"
+        ? data.recoveryTimestamp
+        : session.recoveryTimestamp,
 
     updatedAt: Date.now(),
   };
@@ -117,19 +136,19 @@ function updateSession(userId, data = {}) {
 }
 
 /**
- * CLEAR SESSION (SAFE RESET)
+ * CLEAR SESSION
  */
 function clearSession(userId) {
   if (!userId) return;
 
-  sessions[userId] = createDefaultSession();
+  delete sessions[userId]; // free memory instead of reset
 }
 
 /**
- * ❗ OPTIONAL (FUTURE REDIS MIGRATION READY)
+ * EXPORT (FOR REDIS MIGRATION)
  */
 function exportSessions() {
-  return sessions;
+  return { ...sessions }; // shallow copy safety
 }
 
 module.exports = {
@@ -137,5 +156,5 @@ module.exports = {
   getAllSessions,
   updateSession,
   clearSession,
-  exportSessions, // ready for Redis migration
+  exportSessions,
 };
