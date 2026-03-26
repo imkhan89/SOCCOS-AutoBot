@@ -1,6 +1,8 @@
-// app/ux/flowBuilder.js (FIXED — PRODUCTION SAFE)
+/**
+ * FLOW BUILDER — UPDATED (CONTROLLED + CLEAN UX LAYER)
+ */
 
-// UI Imports
+// UI
 const mainMenu = require("../../interface/ui/menu/mainMenu");
 const categoryMenu = require("../../interface/ui/menu/categoryMenu");
 
@@ -14,11 +16,11 @@ const productActions = require("../../interface/ui/product/productActions");
 const fallbackMessage = require("../../interface/ui/error/fallbackMessage");
 const invalidInput = require("../../interface/ui/error/invalidInput");
 
-// SERVICES
+// Services
 const { search } = require("../../services/search/productSearch");
 const { getProduct } = require("../../services/product/getProduct");
 
-// State Manager
+// State
 const {
   getState,
   setScreen,
@@ -27,13 +29,15 @@ const {
 } = require("./stateManager");
 
 /**
- * Main Flow Builder
+ * MAIN FLOW
  */
 async function buildFlow(userId, intent = {}, context = {}) {
   try {
-    const { type, payload = {} } = intent;
+    if (!userId) return fallbackMessage();
 
-    // 🔥 SAFE INPUT EXTRACTION (FIX)
+    const type = intent?.type || "unknown";
+    const payload = intent?.payload || {};
+
     const input =
       payload?.query ||
       context?.text ||
@@ -41,46 +45,40 @@ async function buildFlow(userId, intent = {}, context = {}) {
 
     const state = getState(userId);
 
-    /**
-     * 🔥 GLOBAL STATE OVERRIDE (CRITICAL SAFETY)
-     */
-    if (state?.screen === "awaiting_search_input" && type !== "search_product") {
+    // 🔒 STATE OVERRIDE (SEARCH MODE LOCK)
+    if (
+      state?.screen === "awaiting_search_input" &&
+      type !== "search_product" &&
+      input
+    ) {
       return await handleSearch(userId, input);
     }
 
     switch (type) {
 
-      // ---------------- MAIN MENU ----------------
       case "main_menu":
         setScreen(userId, "main_menu");
         return mainMenu();
 
-      // ---------------- CATEGORY ----------------
       case "browse_categories":
         setScreen(userId, "category_menu");
         return categoryMenu();
 
-      /**
-       * 🔍 SEARCH ENTRY (BUTTON OR TEXT)
-       */
       case "search_product":
         setScreen(userId, "awaiting_search_input");
 
         return {
           type: "text",
-          message: "🔍 What product are you looking for?",
+          message: "What product are you looking for?",
           meta: { screen: "awaiting_search_input" }
         };
 
-      /**
-       * 🔍 DIRECT SEARCH (TEXT)
-       */
       case "search":
         return await handleSearch(userId, input);
 
-      // ---------------- VIEW PRODUCT ----------------
       case "view_product": {
-        const productId = payload.productId;
+        const productId = payload?.productId;
+        if (!productId) return fallbackMessage();
 
         const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
@@ -91,9 +89,9 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return productCard(product);
       }
 
-      // ---------------- PRODUCT DETAILS ----------------
       case "product_details": {
-        const productId = payload.productId;
+        const productId = payload?.productId;
+        if (!productId) return fallbackMessage();
 
         const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
@@ -104,9 +102,9 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return productDetails(product);
       }
 
-      // ---------------- ORDER ----------------
       case "order_product": {
-        const productId = payload.productId;
+        const productId = payload?.productId;
+        if (!productId) return fallbackMessage();
 
         const product = await getProduct({ id: productId });
         if (!product) return fallbackMessage();
@@ -117,41 +115,38 @@ async function buildFlow(userId, intent = {}, context = {}) {
         return productActions(product);
       }
 
-      // ---------------- CONFIRM ----------------
       case "confirm_order":
         setScreen(userId, "order_confirmed");
 
         return {
           type: "text",
-          message: "✅ Your order has been placed! Our team will contact you shortly.",
+          message: "Your order has been placed. Our team will contact you shortly.",
           meta: { screen: "order_confirmed" }
         };
 
-      // ---------------- SUPPORT ----------------
       case "support":
+        setScreen(userId, "support");
+
         return {
           type: "text",
-          message: "💬 Our support team will assist you shortly. Please describe your issue.",
+          message: "Our support team will assist you shortly. Please describe your issue.",
           meta: { screen: "support" }
         };
 
-      // ---------------- INVALID ----------------
       case "unknown":
-        return invalidInput(payload.input);
+        return invalidInput(payload?.input);
 
-      // ---------------- DEFAULT ----------------
       default:
         return fallbackMessage();
     }
 
   } catch (error) {
-    console.error("❌ FlowBuilder Error:", error.message);
     return fallbackMessage();
   }
 }
 
 /**
- * 🔍 SEARCH HANDLER (ISOLATED — CLEAN ARCHITECTURE)
+ * 🔍 SEARCH HANDLER
  */
 async function handleSearch(userId, query) {
   try {
@@ -164,7 +159,7 @@ async function handleSearch(userId, query) {
 
     const resultsRaw = await search(query);
 
-    if (!resultsRaw || !resultsRaw.length) {
+    if (!Array.isArray(resultsRaw) || resultsRaw.length === 0) {
       return emptyResults(query);
     }
 
@@ -173,7 +168,6 @@ async function handleSearch(userId, query) {
     return searchResults({ query, results });
 
   } catch (error) {
-    console.error("❌ Search Error:", error.message);
     return fallbackMessage();
   }
 }
