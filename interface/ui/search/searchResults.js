@@ -1,5 +1,5 @@
 /**
- * SEARCH RESULTS UI — FINAL (FUNNEL OPTIMIZED + STRICT + HIGH CTR)
+ * SEARCH RESULTS UI — FINAL (STRICT FIXED + WHATSAPP COMPLIANT)
  */
 
 function searchResults({ query = "", results = [] } = {}) {
@@ -13,7 +13,7 @@ function searchResults({ query = "", results = [] } = {}) {
   if (topResults.length === 0) {
     return {
       type: "interactive",
-      message: `No products found for "${query}". Try another search or browse categories.`,
+      message: `No products found for "${query}". Try again or browse categories.`,
       buttons: [
         { id: "search_product", title: "Search Again" },
         { id: "browse_categories", title: "Browse Categories" },
@@ -29,7 +29,7 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ BUILD ROWS (HIGH CLARITY)
+   * ✅ BUILD ROWS (WHATSAPP SAFE LIMITS)
    */
   const rows = topResults
     .map((product, index) => {
@@ -38,11 +38,12 @@ function searchResults({ query = "", results = [] } = {}) {
 
       return {
         id: `view_${safeId}`,
-        title: truncate(product?.title || product?.name || "Product"),
-        description: formatPrice(product?.price)
+        title: truncate(product?.title || product?.name || "Product", 24),
+        description: truncate(formatPrice(product?.price), 72)
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 10); // ✅ enforce WhatsApp row limit
 
   /**
    * ⚠️ FAILSAFE
@@ -61,12 +62,11 @@ function searchResults({ query = "", results = [] } = {}) {
   }
 
   /**
-   * ✅ RETURN LIST (CONVERSION OPTIMIZED)
+   * ✅ RETURN LIST (STRICT CONTRACT)
    */
   return {
     type: "list",
-    message: `Results for "${query}"\n\nSelect a product to view details`,
-    buttonText: "View Products",
+    message: `Results for "${query}"\n\nSelect a product`,
     sections: [
       {
         title: "Top Matches",
@@ -106,9 +106,10 @@ function formatPrice(price) {
 }
 
 /**
- * ✂️ TRUNCATE
+ * ✂️ TRUNCATE (SAFE LIMIT)
  */
 function truncate(text = "", limit = 24) {
+  if (typeof text !== "string") text = String(text);
   if (text.length <= limit) return text;
   return text.substring(0, limit - 3) + "...";
 }
