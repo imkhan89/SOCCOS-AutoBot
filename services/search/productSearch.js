@@ -61,6 +61,13 @@ async function search(input, options = {}) {
 }
 
 /**
+ * 🔥 ALIAS FOR PIPELINE COMPATIBILITY
+ */
+async function searchProducts(query, options = {}) {
+  return await search(query, options);
+}
+
+/**
  * 🧠 SCORING ENGINE (CONVERSION OPTIMIZED)
  */
 function scoreProduct(product, tokens) {
@@ -77,7 +84,7 @@ function scoreProduct(product, tokens) {
     const token = tokens[i];
 
     if (title.includes(token)) {
-      score += 5; // 🎯 strong intent
+      score += 5;
       matchedTokens++;
       continue;
     }
@@ -94,10 +101,8 @@ function scoreProduct(product, tokens) {
     }
   }
 
-  // 🚫 ensure minimum relevance
   if (matchedTokens === 0) return 0;
 
-  // 🎯 boost full match
   if (matchedTokens === tokens.length) {
     score += 5;
   }
@@ -181,5 +186,6 @@ async function searchBySKU(sku) {
 
 module.exports = {
   search,
+  searchProducts, // ✅ FIXED EXPORT
   searchBySKU,
 };
