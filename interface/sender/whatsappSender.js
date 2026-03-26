@@ -1,12 +1,5 @@
 /**
- * CLEAN WHATSAPP SENDER — SINGLE SOURCE OF TRUTH (UPDATED)
- * --------------------------------------------------------
- * Fixes:
- * - Supports text messages
- * - Supports button-based interactive messages
- * - Supports list-based interactive messages
- * - Accepts both message/body style responses
- * - Keeps retry + duplicate protection
+ * WHATSAPP SENDER — UPDATED (CONTROLLED + SCALABLE)
  */
 
 const axios = require("axios");
@@ -16,21 +9,30 @@ const env = require("../../config/env");
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
-// 🧠 DUPLICATE MESSAGE PROTECTION
+// 🧠 DEDUPE CACHE
 const sentMessages = new Set();
 const MAX_CACHE = 1000;
 
+/**
+ * 🔒 CACHE CONTROL
+ */
+function maintainCache() {
+  if (sentMessages.size >= MAX_CACHE) {
+    const keys = sentMessages.values();
+    sentMessages.delete(keys.next().value);
+  }
+}
+
+/**
+ * ⏱️ DELAY
+ */
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function maintainCache() {
-  if (sentMessages.size > MAX_CACHE) {
-    const firstKey = sentMessages.values().next().value;
-    sentMessages.delete(firstKey);
-  }
-}
-
+/**
+ * ✅ ENV VALIDATION
+ */
 function isEnvValid() {
   return (
     env?.whatsapp?.token &&
@@ -39,6 +41,9 @@ function isEnvValid() {
   );
 }
 
+/**
+ * 🧾 EXTRACT DISPLAY TEXT
+ */
 function getDisplayText(response = {}) {
   return (
     response.message ||
@@ -49,43 +54,35 @@ function getDisplayText(response = {}) {
   );
 }
 
+/**
+ * ✅ VALIDATE RESPONSE
+ */
 function validateResponse(response) {
   if (!response || typeof response !== "object") {
-    throw new Error("Empty response");
+    throw new Error("Invalid response");
   }
 
   if (!response.type) {
-    throw new Error("Invalid response structure");
+    throw new Error("Missing response type");
   }
 
-  const displayText = getDisplayText(response);
+  const text = getDisplayText(response);
 
-  if (response.type === "text") {
-    if (!displayText) {
-      throw new Error("Text message is missing body");
-    }
-    return;
+  if (response.type === "text" && !text) {
+    throw new Error("Empty text message");
   }
 
   if (response.type === "interactive") {
-    if (!displayText && !Array.isArray(response.buttons) && !Array.isArray(response.sections)) {
-      throw new Error("Interactive message is missing content");
+    if (!text && !Array.isArray(response.buttons)) {
+      throw new Error("Invalid interactive message");
     }
-    return;
   }
 
   if (response.type === "list") {
-    if (
-      !response.body ||
-      !Array.isArray(response.sections) ||
-      response.sections.length === 0
-    ) {
-      throw new Error("List message is missing body or sections");
+    if (!response.body || !Array.isArray(response.sections)) {
+      throw new Error("Invalid list message");
     }
-    return;
   }
-
-  throw new Error("Invalid response type");
 }
 
 /**
@@ -94,21 +91,16 @@ function validateResponse(response) {
 function buildPayload(to, response) {
   const type = response.type;
   const message = getDisplayText(response);
-  const buttons = Array.isArray(response.buttons) ? response.buttons : [];
 
-  // ---------------- TEXT ----------------
   if (type === "text") {
     return {
       messaging_product: "whatsapp",
       to,
       type: "text",
-      text: {
-        body: message,
-      },
+      text: { body: message },
     };
   }
 
-  // ---------------- BUTTON INTERACTIVE ----------------
   if (type === "interactive") {
     return {
       messaging_product: "whatsapp",
@@ -116,15 +108,13 @@ function buildPayload(to, response) {
       type: "interactive",
       interactive: {
         type: "button",
-        body: {
-          text: message,
-        },
+        body: { text: message },
         action: {
-          buttons: buttons.slice(0, 3).map((btn) => ({
+          buttons: (response.buttons || []).slice(0, 3).map((btn) => ({
             type: "reply",
             reply: {
-              id: btn.id,
-              title: String(btn.title || "").substring(0, 20),
+              id: String(btn.id),
+              title: String(btn.title).substring(0, 20),
             },
           })),
         },
@@ -132,10 +122,7 @@ function buildPayload(to, response) {
     };
   }
 
-  // ---------------- LIST INTERACTIVE ----------------
   if (type === "list") {
-    const sections = Array.isArray(response.sections) ? response.sections : [];
-
     return {
       messaging_product: "whatsapp",
       to,
@@ -143,26 +130,19 @@ function buildPayload(to, response) {
       interactive: {
         type: "list",
         header: response.header
-          ? {
-              type: "text",
-              text: String(response.header).substring(0, 60),
-            }
+          ? { type: "text", text: String(response.header).substring(0, 60) }
           : undefined,
-        body: {
-          text: String(response.body || "").substring(0, 1024),
-        },
+        body: { text: String(response.body).substring(0, 1024) },
         footer: response.footer
-          ? {
-              text: String(response.footer).substring(0, 60),
-            }
+          ? { text: String(response.footer).substring(0, 60) }
           : undefined,
         action: {
-          button: String(response.buttonText || "View Products").substring(0, 20),
-          sections: sections.map((section) => ({
-            title: String(section.title || "Products").substring(0, 24),
-            rows: (Array.isArray(section.rows) ? section.rows : []).slice(0, 10).map((row) => ({
-              id: String(row.id || "").substring(0, 200),
-              title: String(row.title || "Item").substring(0, 24),
+          button: String(response.buttonText || "View").substring(0, 20),
+          sections: (response.sections || []).map((section) => ({
+            title: String(section.title || "").substring(0, 24),
+            rows: (section.rows || []).slice(0, 10).map((row) => ({
+              id: String(row.id).substring(0, 200),
+              title: String(row.title).substring(0, 24),
               description: row.description
                 ? String(row.description).substring(0, 72)
                 : undefined,
@@ -173,7 +153,7 @@ function buildPayload(to, response) {
     };
   }
 
-  throw new Error("Unsupported message type");
+  throw new Error("Unsupported type");
 }
 
 /**
@@ -182,13 +162,13 @@ function buildPayload(to, response) {
 async function send(payload, attempt = 0) {
   try {
     if (!isEnvValid()) {
-      console.error("❌ Missing WhatsApp env config");
+      console.error("WA ENV missing");
       return null;
     }
 
     const url = `https://graph.facebook.com/${env.whatsapp.apiVersion}/${env.whatsapp.phoneNumberId}/messages`;
 
-    const response = await axios.post(url, payload, {
+    const res = await axios.post(url, payload, {
       headers: {
         Authorization: `Bearer ${env.whatsapp.token}`,
         "Content-Type": "application/json",
@@ -196,29 +176,21 @@ async function send(payload, attempt = 0) {
       timeout: 10000,
     });
 
-    console.log("✅ Message sent:", payload.to);
-    return response.data;
+    return res.data;
+
   } catch (error) {
-    const errMsg =
-      error?.response?.data ||
-      error?.message ||
-      "Unknown error";
-
-    console.error("❌ Send Error:", errMsg);
-
     if (attempt < MAX_RETRIES) {
-      console.log(`🔁 Retry (${attempt + 1})...`);
       await delay(RETRY_DELAY);
       return send(payload, attempt + 1);
     }
 
-    console.error("🚨 Final failure:", payload?.to);
+    console.error("WA Send Failed:", error?.message);
     return null;
   }
 }
 
 /**
- * 🎯 MAIN FUNCTION (PIPELINE USES THIS)
+ * 🎯 MAIN
  */
 async function sendMessage(to, response) {
   try {
@@ -226,11 +198,9 @@ async function sendMessage(to, response) {
 
     validateResponse(response);
 
-    const dedupeText = getDisplayText(response) || JSON.stringify(response);
-    const key = `${to}:${response.type}:${dedupeText}`;
+    const key = `${to}:${response.type}:${getDisplayText(response)}`;
 
     if (sentMessages.has(key)) {
-      console.warn("⚠️ Duplicate message blocked");
       return null;
     }
 
@@ -240,9 +210,10 @@ async function sendMessage(to, response) {
     const payload = buildPayload(to, response);
 
     return await send(payload);
+
   } catch (error) {
-    console.error("❌ sendMessage Error:", error.message);
-    throw error;
+    console.error("sendMessageError:", error.message);
+    return null;
   }
 }
 
