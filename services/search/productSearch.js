@@ -1,9 +1,5 @@
 /**
- * PRODUCT SEARCH SERVICE — FINAL (HIGH ACCURACY)
- * --------------------------------------------
- * - Full catalog (via Shopify pagination)
- * - Smart caching
- * - STRICT + WEIGHTED token matching
+ * PRODUCT SEARCH SERVICE — UPDATED (SAFE + CONTROLLED)
  */
 
 const { fetchAllProducts } = require("../../integrations/shopifyClient");
@@ -12,7 +8,9 @@ const logger = require("../../utils/logger");
 // 🧠 CACHE
 let CACHE = [];
 let LAST_FETCH = 0;
+
 const CACHE_TTL = 5 * 60 * 1000;
+const MAX_CACHE_SIZE = 10000;
 
 /**
  * 🔍 MAIN SEARCH
@@ -34,67 +32,50 @@ async function search(input, options = {}) {
     const cleanedQuery = normalize(query);
     if (cleanedQuery.length < 2) return [];
 
-    // 🔥 TOKENIZE
-    const tokens = cleanedQuery
-      .split(" ")
-      .filter(t => t.length > 1);
+    const tokens = cleanedQuery.split(" ").filter(t => t.length > 1);
 
     const products = await getProductsCached();
 
-    /**
-     * 🧠 SCORE-BASED MATCHING (CRITICAL FIX)
-     */
-    const scored = products.map(product => {
+    const results = [];
+
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
+
       const score = scoreProduct(product, tokens);
-      return { product, score };
-    });
+      if (score > 0) {
+        results.push({ product, score });
+      }
+    }
 
-    // ✅ Keep only relevant
-    const filtered = scored
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(item => item.product);
+    results.sort((a, b) => b.score - a.score);
 
-    logger.info(`🔍 Query: ${cleanedQuery}`);
-    logger.info(`🧾 Total Products: ${products.length}`);
-    logger.info(`✅ Matched: ${filtered.length}`);
-
-    return filtered.slice(0, limit);
+    return results.slice(0, limit).map(r => r.product);
 
   } catch (error) {
-    logger.error("Search Error:", error.message);
+    logger.error("SearchError", error);
     return [];
   }
 }
 
 /**
- * 🧠 SCORING ENGINE (SMART MATCH)
+ * 🧠 SCORING ENGINE
  */
 function scoreProduct(product, tokens) {
-  if (!product) return 0;
+  if (!product || !tokens.length) return 0;
 
   const text = buildSearchText(product);
+  const title = (product.title || "").toLowerCase();
 
   let score = 0;
 
-  tokens.forEach(token => {
-    if (text.includes(token)) {
-      score += 2; // base match
-    }
-  });
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
 
-  // 🔥 STRONG MATCH BOOST (title priority)
-  const title = (product.title || "").toLowerCase();
+    if (text.includes(token)) score += 2;
+    if (title.includes(token)) score += 3;
+  }
 
-  tokens.forEach(token => {
-    if (title.includes(token)) {
-      score += 3;
-    }
-  });
-
-  // ❌ STRICT FILTER: ALL TOKENS MUST APPEAR AT LEAST ONCE
   const allMatch = tokens.every(token => text.includes(token));
-
   return allMatch ? score : 0;
 }
 
@@ -102,15 +83,11 @@ function scoreProduct(product, tokens) {
  * 🧠 BUILD SEARCH TEXT
  */
 function buildSearchText(product) {
-  return `
-    ${product.title || ""}
-    ${product.body_html || ""}
-    ${product.vendor || ""}
-    ${product.product_type || ""}
-    ${product.tags || ""}
-  `
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, " ");
+  return (
+    `${product.title || ""} ${product.body_html || ""} ${product.vendor || ""} ${product.product_type || ""} ${product.tags || ""}`
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, " ")
+  );
 }
 
 /**
@@ -125,7 +102,12 @@ async function getProductsCached() {
 
   const products = await fetchAllProducts();
 
-  CACHE = Array.isArray(products) ? products : [];
+  if (!Array.isArray(products)) {
+    return CACHE;
+  }
+
+  // 🚫 Prevent oversized cache
+  CACHE = products.slice(0, MAX_CACHE_SIZE);
   LAST_FETCH = now;
 
   return CACHE;
@@ -153,14 +135,21 @@ async function searchBySKU(sku) {
 
     const products = await getProductsCached();
 
-    const product = products.find(p =>
-      (p.variants || []).some(v => v.sku === cleanedSKU)
-    );
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i];
 
-    return product || null;
+      if (
+        Array.isArray(product.variants) &&
+        product.variants.some(v => v.sku === cleanedSKU)
+      ) {
+        return product;
+      }
+    }
+
+    return null;
 
   } catch (error) {
-    logger.error("SKU Search Error:", error.message);
+    logger.error("SKUSearchError", error);
     return null;
   }
 }
