@@ -1,17 +1,32 @@
 /**
- * CART SERVICE — CLEAN (LOGIC ONLY)
- * ---------------------------------
- * - No UI
- * - In-memory cart (per session/user)
- * - Ready to replace with DB later
+ * CART SERVICE — UPDATED (MEMORY SAFE + CONTROLLED)
  */
 
 const logger = require("../../utils/logger");
 const { getFinalPrice } = require("../product/pricingService");
 const { validateQuantity } = require("../product/stockService");
 
-// 🧠 In-memory store (replace with Redis/DB later)
+// 🧠 In-memory store
 const carts = new Map();
+
+// Limits
+const MAX_CART_ITEMS = 50;
+const MAX_USERS = 5000;
+
+/**
+ * 🧹 GLOBAL MEMORY GUARD (prevents uncontrolled growth)
+ */
+function enforceGlobalLimit() {
+  if (carts.size > MAX_USERS) {
+    const excess = carts.size - MAX_USERS;
+
+    const keys = carts.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = keys.next().value;
+      carts.delete(key);
+    }
+  }
+}
 
 /**
  * 🆔 GET USER CART
@@ -20,6 +35,7 @@ function getCart(userId) {
   if (!userId) return null;
 
   if (!carts.has(userId)) {
+    enforceGlobalLimit();
     carts.set(userId, []);
   }
 
@@ -46,12 +62,19 @@ function addToCart(userId, product, quantity = 1) {
 
     const productId = product.id || product._id;
 
-    // 🔁 Check if already in cart
     const existing = cart.find((item) => item.productId === productId);
 
     if (existing) {
       existing.quantity += quantity;
     } else {
+      // 🚫 Prevent cart overflow
+      if (cart.length >= MAX_CART_ITEMS) {
+        return {
+          success: false,
+          message: "Cart limit reached",
+        };
+      }
+
       cart.push({
         productId,
         name: product.title || product.name,
@@ -66,8 +89,7 @@ function addToCart(userId, product, quantity = 1) {
     };
 
   } catch (error) {
-    logger.error("Add to Cart Error:", error.message);
-
+    logger.error("AddToCartError", error);
     return {
       success: false,
       message: "Unable to add to cart",
@@ -80,6 +102,8 @@ function addToCart(userId, product, quantity = 1) {
  */
 function removeFromCart(userId, productId) {
   try {
+    if (!userId || !productId) return { success: false };
+
     const cart = getCart(userId);
 
     const updatedCart = cart.filter(
@@ -94,11 +118,8 @@ function removeFromCart(userId, productId) {
     };
 
   } catch (error) {
-    logger.error("Remove from Cart Error:", error.message);
-
-    return {
-      success: false,
-    };
+    logger.error("RemoveFromCartError", error);
+    return { success: false };
   }
 }
 
@@ -109,14 +130,12 @@ function getCartTotal(userId) {
   try {
     const cart = getCart(userId);
 
-    const total = cart.reduce((sum, item) => {
+    return cart.reduce((sum, item) => {
       return sum + item.price * item.quantity;
     }, 0);
 
-    return total;
-
   } catch (error) {
-    logger.error("Cart Total Error:", error.message);
+    logger.error("CartTotalError", error);
     return 0;
   }
 }
@@ -126,10 +145,13 @@ function getCartTotal(userId) {
  */
 function clearCart(userId) {
   try {
-    carts.set(userId, []);
+    if (!userId) return false;
+
+    carts.delete(userId); // better than empty array
     return true;
+
   } catch (error) {
-    logger.error("Clear Cart Error:", error.message);
+    logger.error("ClearCartError", error);
     return false;
   }
 }
