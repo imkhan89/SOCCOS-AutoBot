@@ -1,25 +1,29 @@
 /**
- * CLEAN WEBHOOK CONTROLLER — PRODUCTION SAFE (FIXED)
- * Role: Validate → Deduplicate → Extract CORRECT INPUT → Forward
+ * WEBHOOK CONTROLLER — UPDATED (SAFE + CONTROLLED)
  */
 
 const env = require("../config/env");
-
-// ✅ PIPELINE (handles EVERYTHING including sending)
 const messagePipeline = require("../app/orchestration/messagePipeline");
 
-// Logging
 const { logChat } = require("../services/logging/chatLogger");
 const { logError } = require("../services/logging/errorLogger");
 
-/**
- * 🧠 Deduplication cache
- */
+// 🧠 Deduplication cache
 const processedMessages = new Set();
 const MAX_CACHE = 1000;
 
 /**
- * GET /webhook (Verification)
+ * 🧹 CACHE CONTROL
+ */
+function maintainCache() {
+  if (processedMessages.size >= MAX_CACHE) {
+    const keys = processedMessages.values();
+    processedMessages.delete(keys.next().value);
+  }
+}
+
+/**
+ * ✅ VERIFY WEBHOOK
  */
 exports.verifyWebhook = (req, res) => {
   try {
@@ -28,108 +32,81 @@ exports.verifyWebhook = (req, res) => {
     const challenge = req.query["hub.challenge"];
 
     if (mode === "subscribe" && token === env.whatsapp.verifyToken) {
-      console.log("✅ Webhook Verified");
       return res.status(200).send(challenge);
     }
 
     return res.sendStatus(403);
+
   } catch (error) {
-    console.error("❌ Verification Error:", error.message);
+    logError("webhook_verify", error);
     return res.sendStatus(500);
   }
 };
 
 /**
- * 🧹 Maintain deduplication cache
- */
-function maintainCache() {
-  if (processedMessages.size > MAX_CACHE) {
-    const firstKey = processedMessages.values().next().value;
-    processedMessages.delete(firstKey);
-  }
-}
-
-/**
- * 🧠 CORRECT MESSAGE EXTRACTION (CRITICAL FIX)
+ * 🧠 EXTRACT USER INPUT
  */
 function extractUserInput(message) {
-  // TEXT MESSAGE
+  if (!message) return "";
+
   if (message.text?.body) {
-    return message.text.body.trim();
+    return String(message.text.body).trim();
   }
 
-  // BUTTON (legacy)
   if (message.button?.payload) {
-    return message.button.payload.trim();
+    return String(message.button.payload).trim();
   }
 
-  // INTERACTIVE BUTTON (IMPORTANT)
   if (message.interactive?.type === "button_reply") {
-    return message.interactive.button_reply.id.trim(); // ✅ FIXED
+    return String(message.interactive.button_reply?.id || "").trim();
   }
 
-  // INTERACTIVE LIST (IMPORTANT)
   if (message.interactive?.type === "list_reply") {
-    return message.interactive.list_reply.id.trim(); // ✅ FIXED
+    return String(message.interactive.list_reply?.id || "").trim();
   }
 
   return "";
 }
 
 /**
- * POST /webhook (Main Handler)
+ * 🚀 HANDLE WEBHOOK
  */
 exports.handleWebhook = async (req, res) => {
   try {
-    // ✅ ACK FIRST (CRITICAL)
+    // ✅ ACK immediately
     res.sendStatus(200);
 
     const value = req.body?.entry?.[0]?.changes?.[0]?.value;
     const message = value?.messages?.[0];
 
-    if (!message || !message.from) return;
+    if (!message?.from) return;
 
-    /**
-     * 🔴 DUPLICATE PROTECTION
-     */
+    const from = String(message.from).trim();
     const messageId = message.id;
 
-    if (messageId && processedMessages.has(messageId)) return;
-
+    // 🔴 DUPLICATE PROTECTION
     if (messageId) {
+      if (processedMessages.has(messageId)) return;
+
       processedMessages.add(messageId);
       maintainCache();
     }
 
-    /**
-     * ✅ CORRECT INPUT EXTRACTION
-     */
+    // 🧠 INPUT EXTRACTION
     const text = extractUserInput(message);
-    const from = String(message.from).trim();
 
-    if (!text) {
-      console.log("⚠️ Empty input received — skipping");
-      return;
-    }
+    if (!text) return;
 
-    console.log("📥 Incoming:", { from, text });
-
-    /**
-     * 🚀 PIPELINE (handles intent + flow + sending)
-     */
     let response = null;
 
     try {
       response = await messagePipeline({ from, text });
     } catch (pipelineError) {
-      console.error("❌ Pipeline Error:", pipelineError.message);
+      logError("pipeline_error", pipelineError);
+      return;
     }
 
-    console.log("📤 Pipeline response:", response);
-
-    /**
-     * ✅ LOGGING ONLY (NO SENDING HERE)
-     */
+    // ✅ LOGGING ONLY
     if (response?.message) {
       logChat({
         userId: from,
@@ -139,7 +116,6 @@ exports.handleWebhook = async (req, res) => {
     }
 
   } catch (error) {
-    console.error("❌ Webhook Error:", error.message);
-    logError("webhook", error);
+    logError("webhook_handler", error);
   }
 };
