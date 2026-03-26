@@ -1,13 +1,12 @@
-// interface/ui/error/invalidInput.js
-
 const { buildCTAGroup, chatCTA } = require("../components/cta");
 
 function invalidInput(input = "") {
-  const message =
-`❌ *Invalid Input*
+  const safeInput = input || "your request";
+
+  const message = `❌ *Invalid Input*
 
 We didn’t understand:
-"${input}"
+"${safeInput}"
 
 Please choose a valid option below or try again.`;
 
@@ -21,9 +20,9 @@ Please choose a valid option below or try again.`;
     type: "interactive",
     message,
     buttons,
-    meta: {
+    metadata: {
       screen: "invalid_input",
-      input
+      input: safeInput
     }
   };
 }
