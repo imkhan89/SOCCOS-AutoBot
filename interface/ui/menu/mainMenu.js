@@ -1,9 +1,6 @@
 /**
- * MAIN MENU UI — UPDATED (PURE + STANDARDIZED)
+ * MAIN MENU UI — FINAL FIXED (STRICT SCHEMA)
  */
-
-const { buildCTAGroup } = require("../components/cta");
-const { trustBlock } = require("../components/trust");
 
 function mainMenu() {
   const message = [
@@ -11,21 +8,17 @@ function mainMenu() {
     "",
     "Find original auto parts & accessories for your car.",
     "",
-    "What would you like to do?",
-    "",
-    trustBlock()
+    "What would you like to do?"
   ].join("\n");
-
-  const buttons = buildCTAGroup([
-    { id: "browse_categories", title: "Browse Categories" },
-    { id: "search_product", title: "Search Product" },
-    { id: "support", title: "Talk to Support" }
-  ]);
 
   return {
     type: "interactive",
     message,
-    buttons,
+    buttons: [
+      { id: "browse_categories", title: "Browse Categories" },
+      { id: "search_product", title: "Search Product" },
+      { id: "support", title: "Talk to Support" }
+    ],
     metadata: {
       screen: "main_menu"
     }
