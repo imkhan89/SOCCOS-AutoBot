@@ -1,10 +1,7 @@
-// interface/ui/error/fallbackMessage.js
-
 const { buildCTAGroup, chatCTA } = require("../components/cta");
 
 function fallbackMessage() {
-  const message =
-`⚠️ *Something went wrong*
+  const message = `⚠️ *Something went wrong*
 
 We couldn’t process your request.
 
@@ -20,7 +17,7 @@ Please try again or choose an option below:`;
     type: "interactive",
     message,
     buttons,
-    meta: {
+    metadata: {
       screen: "fallback_error"
     }
   };
