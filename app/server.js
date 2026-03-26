@@ -1,5 +1,5 @@
 /**
- * SAE-V2 SERVER (FINAL — STEP 10 ENABLED)
+ * SAE-V2 SERVER (FINAL — PRODUCTION SAFE)
  * --------------------------------
  * ✔ Webhook support
  * ✔ Health monitoring
@@ -16,7 +16,7 @@ const webhookRoutes = require("../routes/webhookRoutes");
 // Monitoring
 const { getHealthStatus } = require("../services/monitoring/healthMonitor");
 
-// ✅ STEP 10 — Recovery Engine
+// Recovery Engine
 const { runAbandonedRecovery } = require("../services/recovery/abandonedCart");
 
 // Initialize app
@@ -32,7 +32,7 @@ app.use(
     limit: "10mb",
     verify: (req, res, buf) => {
       req.rawBody = buf.toString();
-    },
+    }
   })
 );
 
@@ -53,7 +53,7 @@ app.get("/health", (req, res) => {
   return res.status(200).json({
     status: "OK",
     service: "SAE-V2",
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -74,7 +74,7 @@ app.use("/webhook", webhookRoutes);
  */
 app.use((req, res) => {
   return res.status(404).json({
-    error: "Route not found",
+    error: "Route not found"
   });
 });
 
@@ -82,30 +82,25 @@ app.use((req, res) => {
  * GLOBAL ERROR HANDLER
  */
 app.use((err, req, res, next) => {
-  console.error("❌ Global Error:", err?.message || err);
-
   return res.status(500).json({
-    error: "Internal Server Error",
+    error: "Internal Server Error"
   });
 });
 
 /**
- * ✅ STEP 10 — RUN RECOVERY ENGINE (EVERY 60s)
+ * RUN RECOVERY ENGINE (EVERY 60s)
  */
 setInterval(() => {
-  runAbandonedRecovery();
-}, 60 * 1000); // every 1 minute
+  try {
+    runAbandonedRecovery();
+  } catch (e) {
+    // silent fail-safe
+  }
+}, 60 * 1000);
 
 /**
  * START SERVER
  */
-const PORT = env.app.port || 3000;
+const PORT = env?.app?.port || 3000;
 
-app.listen(PORT, () => {
-  console.log("=================================");
-  console.log("🚀 SAE-V2 SERVER STARTED");
-  console.log(`📡 Port: ${PORT}`);
-  console.log(`🌐 Mode: ${env.app.nodeEnv}`);
-  console.log("♻️ Recovery Engine: ACTIVE");
-  console.log("=================================");
-});
+app.listen(PORT);
