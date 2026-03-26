@@ -1,26 +1,28 @@
 /**
- * MAIN MENU UI — FINAL FIXED (STRICT SCHEMA)
+ * MAIN MENU UI — FINAL (FUNNEL OPTIMIZED + HIGH CONVERSION)
  */
 
 function mainMenu() {
   const message = [
-    "🚗 *Welcome to SOCCOS AutoParts*",
+    "🚗 *SOCCOS AutoParts*",
     "",
-    "Find original auto parts & accessories for your car.",
+    "Find the right auto part in seconds.",
     "",
-    "What would you like to do?"
+    "Choose an option to continue:"
   ].join("\n");
 
   return {
     type: "interactive",
     message,
     buttons: [
-      { id: "browse_categories", title: "Browse Categories" },
       { id: "search_product", title: "Search Product" },
+      { id: "browse_categories", title: "Browse Categories" },
       { id: "support", title: "Talk to Support" }
     ],
     metadata: {
-      screen: "main_menu"
+      screen: "main_menu",
+      funnel_step: "entry",
+      intent: "start"
     }
   };
 }
