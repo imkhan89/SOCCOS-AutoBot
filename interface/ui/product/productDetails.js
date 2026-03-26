@@ -1,5 +1,3 @@
-// interface/ui/product/productDetails.js
-
 const { pricingBlock } = require("../components/pricing");
 const { trustBlock } = require("../components/trust");
 const { stockUrgency } = require("../components/urgency");
@@ -16,32 +14,35 @@ function productDetails(product = {}) {
     stock,
     description,
     city
-  } = product;
+  } = product || {};
 
-  const message =
-`📄 *${name || "Product Details"}*
+  const safeId = id ? String(id) : "unknown";
+  const safeDescription =
+    description || "High quality product with perfect fit and durability.";
 
-${pricingBlock({ price, originalPrice, discount })}
-${stockUrgency(stock)}
+  const message = `📄 *${name || "Product Details"}*
 
-📝 ${description || "High quality product with perfect fit and durability."}
+${pricingBlock({ price, originalPrice, discount }) || ""}
+${stockUrgency(stock) || ""}
 
-${deliveryInfo()}
-${deliveryETA(city)}
+📝 ${safeDescription}
 
-${trustBlock()}`;
+${deliveryInfo() || ""}
+${deliveryETA(city) || ""}
+
+${trustBlock() || ""}`.trim();
 
   const buttons = buildCTAGroup([
-    primaryCTA("🛒 Order Now", `order_${id}`),
-    chatCTA("💬 Ask Question", `ask_${id}`)
+    primaryCTA("🛒 Order Now", `order_${safeId}`),
+    chatCTA("💬 Ask Question", `ask_${safeId}`)
   ]);
 
   return {
     type: "interactive",
-    message,
+    message: message || "Product details unavailable.",
     buttons,
-    meta: {
-      productId: id,
+    metadata: {
+      productId: safeId,
       screen: "product_details"
     }
   };
