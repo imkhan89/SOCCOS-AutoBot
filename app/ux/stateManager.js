@@ -1,32 +1,57 @@
 /**
- * STATE MANAGER — PRODUCTION (UPDATED)
- * ------------------------------------
- * - Ensures state persistence on first access
- * - Adds session expiry (auto reset)
- * - Safe and scalable
+ * STATE MANAGER — UPDATED (MEMORY SAFE + SCALABLE)
  */
 
 const store = new Map();
 
-// ⏱ SESSION TTL (30 minutes)
-const SESSION_TTL = 30 * 60 * 1000;
+// ⏱ CONFIG
+const SESSION_TTL = 30 * 60 * 1000; // 30 min
+const MAX_USERS = 10000;
 
 /**
- * Get full user state
+ * 🧹 GLOBAL MEMORY CONTROL
+ */
+function enforceLimit() {
+  if (store.size > MAX_USERS) {
+    const excess = store.size - MAX_USERS;
+    const keys = store.keys();
+
+    for (let i = 0; i < excess; i++) {
+      store.delete(keys.next().value);
+    }
+  }
+}
+
+/**
+ * DEFAULT STATE
+ */
+function buildDefaultState() {
+  return {
+    screen: "main_menu",
+    lastIntent: null,
+    productId: null,
+    lastQuery: null,
+    step: null,
+    updatedAt: Date.now()
+  };
+}
+
+/**
+ * GET STATE
  */
 function getState(userId) {
   if (!userId) return buildDefaultState();
 
   let state = store.get(userId);
 
-  // ✅ Create if not exists
   if (!state) {
+    enforceLimit();
     state = buildDefaultState();
     store.set(userId, state);
     return state;
   }
 
-  // 🔁 Expire old sessions
+  // TTL expiry
   if (Date.now() - state.updatedAt > SESSION_TTL) {
     const fresh = buildDefaultState();
     store.set(userId, fresh);
@@ -37,10 +62,12 @@ function getState(userId) {
 }
 
 /**
- * Set full state (overwrite)
+ * SET STATE (FULL REPLACE)
  */
 function setState(userId, newState = {}) {
   if (!userId) return;
+
+  enforceLimit();
 
   const state = {
     ...buildDefaultState(),
@@ -49,15 +76,14 @@ function setState(userId, newState = {}) {
   };
 
   store.set(userId, state);
-
   return state;
 }
 
 /**
- * Update partial state
+ * UPDATE STATE (PARTIAL)
  */
 function updateState(userId, patch = {}) {
-  if (!userId) return;
+  if (!userId || typeof patch !== "object") return;
 
   const current = getState(userId);
 
@@ -68,48 +94,24 @@ function updateState(userId, patch = {}) {
   };
 
   store.set(userId, updated);
-
   return updated;
 }
 
 /**
- * Reset user state
+ * RESET STATE
  */
 function resetState(userId) {
   if (!userId) return;
 
   const fresh = buildDefaultState();
-
   store.set(userId, fresh);
 
   return fresh;
 }
 
 /**
- * Default state structure
+ * HELPERS
  */
-function buildDefaultState() {
-  return {
-    screen: "main_menu",
-
-    lastIntent: null,
-
-    // Product context
-    productId: null,
-    lastQuery: null,
-
-    // Flow tracking
-    step: null,
-
-    // Metadata
-    updatedAt: Date.now()
-  };
-}
-
-/**
- * Convenience helpers
- */
-
 function setScreen(userId, screen) {
   return updateState(userId, { screen });
 }
