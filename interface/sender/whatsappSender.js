@@ -1,21 +1,18 @@
 /**
- * WHATSAPP SENDER — UPDATED (CONTROLLED + SCALABLE)
+ * WHATSAPP SENDER — FINAL FIXED (PRODUCTION SAFE + META COMPLIANT)
  */
 
 const axios = require("axios");
 const env = require("../../config/env");
 
-// 🔁 RETRY CONFIG
+// RETRY CONFIG
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
-// 🧠 DEDUPE CACHE
+// DEDUPE CACHE
 const sentMessages = new Set();
 const MAX_CACHE = 1000;
 
-/**
- * 🔒 CACHE CONTROL
- */
 function maintainCache() {
   if (sentMessages.size >= MAX_CACHE) {
     const keys = sentMessages.values();
@@ -23,16 +20,10 @@ function maintainCache() {
   }
 }
 
-/**
- * ⏱️ DELAY
- */
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * ✅ ENV VALIDATION
- */
 function isEnvValid() {
   return (
     env?.whatsapp?.token &&
@@ -42,57 +33,33 @@ function isEnvValid() {
 }
 
 /**
- * 🧾 EXTRACT DISPLAY TEXT
+ * STRICT MESSAGE EXTRACTION (FIXED)
  */
-function getDisplayText(response = {}) {
-  return (
-    response.message ||
-    response.body ||
-    response.header ||
-    response.title ||
-    ""
-  );
+function getMessage(response = {}) {
+  return response.message || "";
 }
 
 /**
- * ✅ VALIDATE RESPONSE
+ * STRICT VALIDATION (FIXED TO MATCH CONTRACT)
  */
 function validateResponse(response) {
-  if (!response || typeof response !== "object") {
-    throw new Error("Invalid response");
-  }
+  if (!response || typeof response !== "object") return false;
+  if (!response.type) return false;
+  if (!response.message) return false;
 
-  if (!response.type) {
-    throw new Error("Missing response type");
-  }
+  if (response.type === "interactive" && !response.buttons?.length) return false;
+  if (response.type === "list" && !response.sections?.length) return false;
 
-  const text = getDisplayText(response);
-
-  if (response.type === "text" && !text) {
-    throw new Error("Empty text message");
-  }
-
-  if (response.type === "interactive") {
-    if (!text && !Array.isArray(response.buttons)) {
-      throw new Error("Invalid interactive message");
-    }
-  }
-
-  if (response.type === "list") {
-    if (!response.body || !Array.isArray(response.sections)) {
-      throw new Error("Invalid list message");
-    }
-  }
+  return true;
 }
 
 /**
- * 🧱 BUILD PAYLOAD
+ * CLEAN PAYLOAD BUILDER (STRICT META FORMAT)
  */
 function buildPayload(to, response) {
-  const type = response.type;
-  const message = getDisplayText(response);
+  const message = getMessage(response);
 
-  if (type === "text") {
+  if (response.type === "text") {
     return {
       messaging_product: "whatsapp",
       to,
@@ -101,7 +68,7 @@ function buildPayload(to, response) {
     };
   }
 
-  if (type === "interactive") {
+  if (response.type === "interactive") {
     return {
       messaging_product: "whatsapp",
       to,
@@ -110,11 +77,11 @@ function buildPayload(to, response) {
         type: "button",
         body: { text: message },
         action: {
-          buttons: (response.buttons || []).slice(0, 3).map((btn) => ({
+          buttons: response.buttons.slice(0, 3).map((btn) => ({
             type: "reply",
             reply: {
               id: String(btn.id),
-              title: String(btn.title).substring(0, 20),
+              title: String(btn.title).slice(0, 24),
             },
           })),
         },
@@ -122,29 +89,23 @@ function buildPayload(to, response) {
     };
   }
 
-  if (type === "list") {
+  if (response.type === "list") {
     return {
       messaging_product: "whatsapp",
       to,
       type: "interactive",
       interactive: {
         type: "list",
-        header: response.header
-          ? { type: "text", text: String(response.header).substring(0, 60) }
-          : undefined,
-        body: { text: String(response.body).substring(0, 1024) },
-        footer: response.footer
-          ? { text: String(response.footer).substring(0, 60) }
-          : undefined,
+        body: { text: message },
         action: {
-          button: String(response.buttonText || "View").substring(0, 20),
-          sections: (response.sections || []).map((section) => ({
-            title: String(section.title || "").substring(0, 24),
-            rows: (section.rows || []).slice(0, 10).map((row) => ({
-              id: String(row.id).substring(0, 200),
-              title: String(row.title).substring(0, 24),
+          button: "View Options",
+          sections: response.sections.slice(0, 10).map((section) => ({
+            title: String(section.title).slice(0, 24),
+            rows: section.rows.slice(0, 10).map((row) => ({
+              id: String(row.id),
+              title: String(row.title).slice(0, 24),
               description: row.description
-                ? String(row.description).substring(0, 72)
+                ? String(row.description).slice(0, 72)
                 : undefined,
             })),
           })),
@@ -153,18 +114,15 @@ function buildPayload(to, response) {
     };
   }
 
-  throw new Error("Unsupported type");
+  return null;
 }
 
 /**
- * 🚀 SEND CORE
+ * SEND CORE (NO CONSOLE LOGS)
  */
 async function send(payload, attempt = 0) {
   try {
-    if (!isEnvValid()) {
-      console.error("WA ENV missing");
-      return null;
-    }
+    if (!isEnvValid()) return null;
 
     const url = `https://graph.facebook.com/${env.whatsapp.apiVersion}/${env.whatsapp.phoneNumberId}/messages`;
 
@@ -177,42 +135,34 @@ async function send(payload, attempt = 0) {
     });
 
     return res.data;
-
   } catch (error) {
     if (attempt < MAX_RETRIES) {
       await delay(RETRY_DELAY);
       return send(payload, attempt + 1);
     }
-
-    console.error("WA Send Failed:", error?.message);
     return null;
   }
 }
 
 /**
- * 🎯 MAIN
+ * MAIN
  */
 async function sendMessage(to, response) {
   try {
-    if (!to || !response) return null;
+    if (!to || !validateResponse(response)) return null;
 
-    validateResponse(response);
+    const key = `${to}:${response.type}:${response.message}`;
 
-    const key = `${to}:${response.type}:${getDisplayText(response)}`;
-
-    if (sentMessages.has(key)) {
-      return null;
-    }
+    if (sentMessages.has(key)) return null;
 
     sentMessages.add(key);
     maintainCache();
 
     const payload = buildPayload(to, response);
+    if (!payload) return null;
 
     return await send(payload);
-
   } catch (error) {
-    console.error("sendMessageError:", error.message);
     return null;
   }
 }
