@@ -1,13 +1,9 @@
 /**
  * SAE-V2 SERVER (FINAL — PRODUCTION SAFE)
- * --------------------------------
- * ✔ Webhook support
- * ✔ Health monitoring
- * ✔ Error handling
- * ✔ Abandoned cart recovery engine
  */
 
 const express = require("express");
+require("dotenv").config();
 const env = require("../config/env");
 
 // Routes
@@ -19,14 +15,11 @@ const { getHealthStatus } = require("../services/monitoring/healthMonitor");
 // Recovery Engine
 const { runAbandonedRecovery } = require("../services/recovery/abandonedCart");
 
-// Initialize app
 const app = express();
 
 /**
  * GLOBAL MIDDLEWARE
  */
-
-// Parse JSON (retain raw body for webhook verification)
 app.use(
   express.json({
     limit: "10mb",
@@ -36,19 +29,15 @@ app.use(
   })
 );
 
-// Parse URL-encoded data
 app.use(express.urlencoded({ extended: true }));
 
 /**
- * ROOT HEALTH CHECK
+ * HEALTH CHECKS
  */
 app.get("/", (req, res) => {
   return res.status(200).send("SAE-V2 Server Running");
 });
 
-/**
- * BASIC HEALTH CHECK
- */
 app.get("/health", (req, res) => {
   return res.status(200).json({
     status: "OK",
@@ -57,9 +46,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-/**
- * ADVANCED STATUS
- */
 app.get("/status", (req, res) => {
   return res.status(200).json(getHealthStatus());
 });
@@ -88,19 +74,17 @@ app.use((err, req, res, next) => {
 });
 
 /**
- * RUN RECOVERY ENGINE (EVERY 60s)
+ * RECOVERY ENGINE
  */
 setInterval(() => {
   try {
     runAbandonedRecovery();
-  } catch (e) {
-    // silent fail-safe
-  }
+  } catch (e) {}
 }, 60 * 1000);
 
 /**
  * START SERVER
  */
-const PORT = env?.app?.port || 3000;
+const PORT = process.env.PORT || env?.app?.port || 3000;
 
 app.listen(PORT);
